@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/actions/auth";
 
@@ -29,8 +30,14 @@ export default async function DashboardPage() {
       )}
       <p className="mb-6 mt-4 text-sm text-slate-600">
         This confirms signup, email confirmation, login, and Supabase session handling are all
-        working. The Survivor Pool entry flow is next.
+        working.
       </p>
+      <Link
+        href="/survivor"
+        className="mb-3 block rounded-md bg-brand-600 px-4 py-2.5 text-center text-base font-semibold text-white transition hover:bg-brand-700"
+      >
+        SEC Survivor Pool
+      </Link>
       <form action={signOut}>
         <button
           type="submit"

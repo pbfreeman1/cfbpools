@@ -110,10 +110,15 @@ Deno.serve(async (req) => {
     if (teamErr) throw new Error(teamErr.message);
     const cfbdIdToTeamId = new Map(teamRows.map((r) => [r.cfbd_team_id, r.id]));
 
-    // 3. Games — regular season only. Spreads are intentionally left null here.
-    const gamesRes = await fetch(`${CFBD_BASE}/games?year=${season}&seasonType=regular`, {
-      headers: cfbdHeaders(CFBD_API_KEY),
-    });
+    // 3. Games — regular season, FBS classification only. Without this filter,
+    // CFBD returns games across every division (FCS, DII, etc.), which is why
+    // the first run had ~877 skipped games that were pure FCS-vs-FCS matchups
+    // with nothing to do with our FBS-only master_teams table.
+    // Spreads are intentionally left null here.
+    const gamesRes = await fetch(
+      `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs`,
+      { headers: cfbdHeaders(CFBD_API_KEY) }
+    );
     if (!gamesRes.ok) {
       throw new Error(`CFBD /games failed: ${gamesRes.status} ${await gamesRes.text()}`);
     }
@@ -121,6 +126,11 @@ Deno.serve(async (req) => {
 
     let gamesSynced = 0;
     let gamesSkipped = 0;
+    let skippedNoWeek = 0;
+    let skippedNoHomeTeam = 0;
+    let skippedNoAwayTeam = 0;
+    const sampleSkips: unknown[] = [];
+
     for (const g of games) {
       const scheduleId = weekToScheduleId.get(g.week);
       const homeTeamId = cfbdIdToTeamId.get(g.homeId);
@@ -130,6 +140,20 @@ Deno.serve(async (req) => {
       // match, since we only synced FBS teams — skip those rather than error.
       if (!scheduleId || !homeTeamId || !awayTeamId) {
         gamesSkipped++;
+        if (!scheduleId) skippedNoWeek++;
+        if (!homeTeamId) skippedNoHomeTeam++;
+        if (!awayTeamId) skippedNoAwayTeam++;
+        if (sampleSkips.length < 15) {
+          sampleSkips.push({
+            id: g.id,
+            week: g.week,
+            homeId: g.homeId,
+            homeTeam: g.homeTeam,
+            awayId: g.awayId,
+            awayTeam: g.awayTeam,
+            reason: !scheduleId ? "no_week" : !homeTeamId ? "no_home_team" : "no_away_team",
+          });
+        }
         continue;
       }
 
@@ -152,7 +176,17 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ season, teamsSynced, weeksSynced, gamesSynced, gamesSkipped }),
+      JSON.stringify({
+        season,
+        teamsSynced,
+        weeksSynced,
+        gamesSynced,
+        gamesSkipped,
+        skippedNoWeek,
+        skippedNoHomeTeam,
+        skippedNoAwayTeam,
+        sampleSkips,
+      }),
       { headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
