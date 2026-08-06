@@ -22,17 +22,45 @@ export default async function SignupPage({
       )}
 
       <form action={signUp} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="firstName" className="mb-1 block text-sm font-medium text-slate-700">
+              First name
+            </label>
+            <input
+              id="firstName"
+              name="firstName"
+              type="text"
+              required
+              autoComplete="given-name"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="lastName" className="mb-1 block text-sm font-medium text-slate-700">
+              Last name
+            </label>
+            <input
+              id="lastName"
+              name="lastName"
+              type="text"
+              required
+              autoComplete="family-name"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+        </div>
         <div>
-          <label htmlFor="displayName" className="mb-1 block text-sm font-medium text-slate-700">
-            Display name
+          <label htmlFor="phone" className="mb-1 block text-sm font-medium text-slate-700">
+            Phone number
           </label>
           <input
-            id="displayName"
-            name="displayName"
-            type="text"
+            id="phone"
+            name="phone"
+            type="tel"
             required
-            autoComplete="name"
-            placeholder="What should we call you?"
+            autoComplete="tel"
+            placeholder="(555) 555-5555"
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>

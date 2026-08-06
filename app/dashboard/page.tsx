@@ -14,14 +14,14 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, is_admin")
+    .select("first_name, last_name, is_admin")
     .eq("id", user.id)
     .single();
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12 text-center">
       <h1 className="mb-1 text-2xl font-bold text-brand-700">
-        You&apos;re in{profile?.display_name ? `, ${profile.display_name}` : ""}.
+        You&apos;re in{profile?.first_name ? `, ${profile.first_name}` : ""}.
       </h1>
       <p className="mb-1 text-sm text-slate-600">{user.email}</p>
       {profile?.is_admin && (

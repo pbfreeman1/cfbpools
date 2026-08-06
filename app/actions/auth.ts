@@ -8,7 +8,9 @@ export async function signUp(formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const confirmPassword = formData.get("confirmPassword") as string;
-  const displayName = formData.get("displayName") as string;
+  const firstName = formData.get("firstName") as string;
+  const lastName = formData.get("lastName") as string;
+  const phone = formData.get("phone") as string;
 
   if (password !== confirmPassword) {
     redirect(`/signup?error=${encodeURIComponent("Passwords don't match")}`);
@@ -20,7 +22,7 @@ export async function signUp(formData: FormData) {
     email,
     password,
     options: {
-      data: { display_name: displayName },
+      data: { first_name: firstName, last_name: lastName, phone },
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`,
     },
   });
