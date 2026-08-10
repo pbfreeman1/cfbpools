@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { sendEmail, adminEmail, adminNewAccountEmail } from "@/lib/email";
 
 export async function signUp(formData: FormData) {
   const email = formData.get("email") as string;
@@ -31,6 +32,15 @@ export async function signUp(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
   }
 
+  const admin = adminEmail();
+  if (admin) {
+    await sendEmail({
+      to: admin,
+      subject: "New account created",
+      html: adminNewAccountEmail({ firstName, lastName, email }),
+    });
+  }
+
   redirect("/signup/check-email");
 }
 
@@ -47,7 +57,7 @@ export async function signIn(formData: FormData) {
   }
 
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  redirect("/");
 }
 
 export async function signOut() {

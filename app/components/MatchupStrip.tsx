@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
+import { isReadableOnDark } from "@/lib/color";
 
 export default async function MatchupStrip() {
   const supabase = await createClient();
@@ -66,9 +67,19 @@ export default async function MatchupStrip() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={away.logo_url} alt="" className="h-6 w-6" />
                   )}
+                  {away.primary_color && (
+                    <span
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: away.primary_color }}
+                    />
+                  )}
                   <span
                     className="text-sm font-semibold"
-                    style={away.primary_color ? { color: away.primary_color } : undefined}
+                    style={
+                      isReadableOnDark(away.primary_color)
+                        ? { color: away.primary_color as string }
+                        : undefined
+                    }
                   >
                     {away.short_name || away.school_name}
                   </span>
@@ -81,9 +92,19 @@ export default async function MatchupStrip() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={home.logo_url} alt="" className="h-6 w-6" />
                   )}
+                  {home.primary_color && (
+                    <span
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: home.primary_color }}
+                    />
+                  )}
                   <span
                     className="text-sm font-semibold"
-                    style={home.primary_color ? { color: home.primary_color } : undefined}
+                    style={
+                      isReadableOnDark(home.primary_color)
+                        ? { color: home.primary_color as string }
+                        : undefined
+                    }
                   >
                     {home.short_name || home.school_name}
                   </span>

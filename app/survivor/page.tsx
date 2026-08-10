@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
+import { isReadableOnDark } from "@/lib/color";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
 
@@ -163,6 +164,16 @@ export default async function SurvivorHomePage({
   }
   const canCreateAnother = user && entries.length < 2 && !deadlinePassed;
 
+  const missingPickEntries: { id: string; name: string }[] = [];
+  if (user && currentWeek) {
+    entries.forEach((e) => {
+      const cell = grid.get(e.id)?.get(currentWeek.id);
+      if (e.status === "active" && cell && !cell.pick && !cell.locked) {
+        missingPickEntries.push({ id: e.id, name: e.entry_name || `Entry ${e.entry_number}` });
+      }
+    });
+  }
+
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
       <Link href="/" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
@@ -177,6 +188,27 @@ export default async function SurvivorHomePage({
 
       {params.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{params.error}</p>
+      )}
+
+      {missingPickEntries.length > 0 && currentWeek && (
+        <div className="mb-6 rounded-md border border-gold-500 bg-gold-500/10 px-4 py-3">
+          <p className="text-sm font-semibold text-gold-400">
+            {missingPickEntries.length === 1
+              ? `${missingPickEntries[0].name} hasn't picked for Week ${currentWeek.week_number} yet.`
+              : `${missingPickEntries.length} entries haven't picked for Week ${currentWeek.week_number} yet.`}
+          </p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {missingPickEntries.map((e) => (
+              <Link
+                key={e.id}
+                href={`/survivor/${e.id}?week=${currentWeek.week_number}`}
+                className="text-sm font-medium text-gold-400 hover:underline"
+              >
+                Pick now for {e.name} &rarr;
+              </Link>
+            ))}
+          </div>
+        </div>
       )}
 
       <MatchupStrip />
@@ -313,11 +345,17 @@ export default async function SurvivorHomePage({
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={cell.pick.logoUrl} alt="" className="h-5 w-5" />
                             )}
+                            {cell.pick.color && (
+                              <span
+                                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                style={{ backgroundColor: cell.pick.color }}
+                              />
+                            )}
                             <span
                               className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
                               style={
-                                !cell.locked && cell.pick.color
-                                  ? { color: cell.pick.color }
+                                !cell.locked && isReadableOnDark(cell.pick.color)
+                                  ? { color: cell.pick.color as string }
                                   : undefined
                               }
                             >

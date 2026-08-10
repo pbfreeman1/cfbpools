@@ -27,6 +27,12 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 - Authentication → URL Configuration → Site URL: set to the real deployed URL (not localhost) once live
 - Authentication → URL Configuration → Redirect URLs: add `http://localhost:3000/**` and the production URL `/**`
 
+## Email
+- `lib/email.ts` — `sendEmail()` wraps Resend's API via plain `fetch`, no SDK dependency. It never throws — missing env vars or a failed send just log and continue, so email can never break the action it's attached to.
+- Required env vars: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL` (admin notifications are skipped if unset).
+- Triggers: account signup → admin notification. Survivor entry created → user welcome/instructions email + admin notification. Pick saved/changed → user confirmation email.
+- Resend requires domain verification (SPF/DKIM) before sending to arbitrary recipients — see Section 3 of the roadmap doc.
+
 ## Branches
 - `main` = production (Vercel production deploy + Supabase production).
 - `dev` = staging (Vercel preview + Supabase dev branch).
