@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
 import CountdownTimer from "@/app/components/CountdownTimer";
+import MatchupStrip from "@/app/components/MatchupStrip";
 
 export default async function SurvivorHomePage({
   searchParams,
@@ -69,6 +70,8 @@ export default async function SurvivorHomePage({
       {params.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{params.error}</p>
       )}
+
+      <MatchupStrip />
 
       {/* Public pool stats */}
       <div className="mb-6 grid grid-cols-3 gap-2 rounded-lg border border-edge bg-surface p-4 text-center">
