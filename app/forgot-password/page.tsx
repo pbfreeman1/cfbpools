@@ -9,7 +9,7 @@ export default async function ForgotPasswordPage({
   const params = await searchParams;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12">
+    <main className="mx-auto flex min-h-screen max-w-sm sm:max-w-md flex-col justify-center px-6 py-12">
       <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">Reset your password</h1>
       <p className="mb-6 text-sm text-muted">
         Enter your email and we&apos;ll send you a link to set a new password.

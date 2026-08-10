@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { savePick } from "@/app/actions/survivor";
 
 type TeamOption = {
@@ -21,6 +21,7 @@ export default function WeekPickCard({
   currentPick,
   teamOptions,
   bonusWeeksUsed,
+  autoOpen,
 }: {
   entryId: string;
   scheduleId: string;
@@ -35,8 +36,16 @@ export default function WeekPickCard({
   } | null;
   teamOptions: TeamOption[];
   bonusWeeksUsed: number;
+  autoOpen?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(Boolean(autoOpen) && !locked);
+
+  useEffect(() => {
+    if (autoOpen) {
+      document.getElementById(`week-${weekNumber}`)?.scrollIntoView({ block: "center" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selectedTeam, setSelectedTeam] = useState(currentPick?.team_id ?? "");
   const [isBonusWeek, setIsBonusWeek] = useState(currentPick?.is_bonus_week ?? false);
   const [selectedBonusTeam, setSelectedBonusTeam] = useState(currentPick?.bonus_team_id ?? "");
@@ -88,7 +97,7 @@ export default function WeekPickCard({
   // Locked, view-only state
   if (locked && !editing) {
     return (
-      <div className="rounded-md border border-edge bg-surface px-4 py-3">
+      <div id={`week-${weekNumber}`} className="rounded-md border border-edge bg-surface px-4 py-3">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-semibold text-ink">Week {weekNumber}</span>
           <span className="rounded-full bg-edge px-2 py-0.5 text-xs font-medium text-muted">
@@ -111,7 +120,7 @@ export default function WeekPickCard({
 
   if (!editing) {
     return (
-      <div className="rounded-md border border-edge px-4 py-3">
+      <div id={`week-${weekNumber}`} className="rounded-md border border-edge px-4 py-3">
         <div className="mb-1 flex items-center justify-between">
           <span className="font-semibold text-ink">Week {weekNumber}</span>
           <button
@@ -140,6 +149,7 @@ export default function WeekPickCard({
   return (
     <form
       action={savePick}
+      id={`week-${weekNumber}`}
       className="rounded-md border-2 border-gold-500 px-4 py-3"
       onSubmit={() => setEditing(false)}
     >
@@ -159,7 +169,7 @@ export default function WeekPickCard({
         </button>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2">
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {teamOptions.map((team) => (
           <TeamButton
             key={team.id}
@@ -190,7 +200,7 @@ export default function WeekPickCard({
       )}
 
       {isBonusWeek && (
-        <div className="mb-3 grid grid-cols-2 gap-2">
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {teamOptions
             .filter((t) => t.id !== selectedTeam)
             .map((team) => (

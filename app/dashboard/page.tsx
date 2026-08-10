@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     .single();
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12 text-center">
+    <main className="mx-auto flex min-h-screen max-w-sm sm:max-w-md flex-col justify-center px-6 py-12 text-center">
       <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">
         You&apos;re in{profile?.first_name ? `, ${profile.first_name}` : ""}.
       </h1>

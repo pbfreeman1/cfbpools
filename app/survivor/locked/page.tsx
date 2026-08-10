@@ -23,7 +23,7 @@ export default async function LockedPicksPage() {
   const weekNumbers = Array.from(byWeek.keys()).sort((a, b) => b - a);
 
   return (
-    <main className="mx-auto min-h-screen max-w-sm px-6 py-12">
+    <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
       <Link href="/survivor" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
         &larr; Back to entries
       </Link>

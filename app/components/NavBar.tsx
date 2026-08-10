@@ -9,7 +9,7 @@ export default async function NavBar() {
 
   return (
     <nav className="border-b border-edge bg-surface">
-      <div className="mx-auto flex max-w-md items-center justify-between px-6 py-3">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
         <Link
           href="/"
           className="font-display text-lg font-bold uppercase tracking-wide text-gold-400"

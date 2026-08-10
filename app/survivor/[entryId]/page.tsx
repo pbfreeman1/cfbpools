@@ -9,7 +9,7 @@ export default async function SurvivorEntryPage({
   searchParams,
 }: {
   params: Promise<{ entryId: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; week?: string }>;
 }) {
   const { entryId } = await params;
   const sp = await searchParams;
@@ -87,7 +87,7 @@ export default async function SurvivorEntryPage({
   };
 
   return (
-    <main className="mx-auto min-h-screen max-w-sm px-6 py-12">
+    <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
       <Link href="/survivor" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
         &larr; Back to pool home
       </Link>
@@ -207,6 +207,7 @@ export default async function SurvivorEntryPage({
               }
               teamOptions={teamOptions}
               bonusWeeksUsed={bonusWeeksUsed}
+              autoOpen={sp.week === String(week.week_number)}
             />
           );
         })}
