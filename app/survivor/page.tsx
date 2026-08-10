@@ -21,6 +21,8 @@ type CellData = {
     color: string | null;
     isBonus: boolean;
     bonusShortName: string | null;
+    bonusLogoUrl: string | null;
+    bonusColor: string | null;
   } | null;
 };
 
@@ -145,6 +147,8 @@ export default async function SurvivorHomePage({
             color: team.primary_color,
             isBonus: p.is_bonus_week,
             bonusShortName: bonusTeam ? bonusTeam.short_name || bonusTeam.school_name : null,
+            bonusLogoUrl: bonusTeam?.logo_url ?? null,
+            bonusColor: bonusTeam?.primary_color ?? null,
           },
         });
       });
@@ -337,46 +341,83 @@ export default async function SurvivorHomePage({
                       {(weeks ?? []).map((w) => {
                         const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
                         const base =
-                          "flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-md border text-center";
+                          "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
+
+                        const bonusStyle = cell.pick?.isBonus
+                          ? {
+                              background: `linear-gradient(135deg, ${
+                                cell.pick.color || "#232B45"
+                              } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
+                            }
+                          : undefined;
 
                         const inner = cell.pick ? (
-                          <>
-                            {cell.pick.logoUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={cell.pick.logoUrl} alt="" className="h-5 w-5" />
-                            )}
-                            {cell.pick.color && (
-                              <span
-                                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                style={{ backgroundColor: cell.pick.color }}
-                              />
-                            )}
-                            <span
-                              className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
-                              style={
-                                !cell.locked && isReadableOnDark(cell.pick.color)
-                                  ? { color: cell.pick.color as string }
-                                  : undefined
-                              }
-                            >
-                              {cell.pick.shortName}
-                            </span>
-                            {cell.pick.isBonus && (
-                              <span className="text-[9px] leading-none text-gold-400">
-                                &#9733; bonus
+                          cell.pick.isBonus ? (
+                            <>
+                              {cell.pick.logoUrl && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={cell.pick.logoUrl}
+                                  alt=""
+                                  className="absolute left-1 top-1 h-5 w-5 drop-shadow"
+                                />
+                              )}
+                              {cell.pick.bonusLogoUrl && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={cell.pick.bonusLogoUrl}
+                                  alt=""
+                                  className="absolute bottom-1 right-1 h-5 w-5 drop-shadow"
+                                />
+                              )}
+                              <span className="absolute inset-x-0 bottom-0 bg-app/70 text-[7px] font-bold uppercase leading-tight text-gold-300">
+                                Bonus
                               </span>
-                            )}
-                          </>
+                            </>
+                          ) : (
+                            <>
+                              {cell.pick.logoUrl && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={cell.pick.logoUrl} alt="" className="h-5 w-5" />
+                              )}
+                              {cell.pick.color && (
+                                <span
+                                  className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                  style={{ backgroundColor: cell.pick.color }}
+                                />
+                              )}
+                              <span
+                                className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
+                                style={
+                                  !cell.locked && isReadableOnDark(cell.pick.color)
+                                    ? { color: cell.pick.color as string }
+                                    : undefined
+                                }
+                              >
+                                {cell.pick.shortName}
+                              </span>
+                            </>
+                          )
                         ) : cell.locked ? (
                           <span className="text-lg leading-none text-dead">&#10005;</span>
                         ) : (
                           <span className="text-lg leading-none text-muted">+</span>
                         );
 
+                        const title = cell.pick?.isBonus
+                          ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
+                          : undefined;
+
                         if (cell.locked) {
                           return (
                             <td key={w.id}>
-                              <div className={`${base} border-edge bg-app opacity-50`}>{inner}</div>
+                              <div
+                                title={title}
+                                style={bonusStyle}
+                                className={`${base} border-edge bg-app opacity-50`}
+                              >
+                                {inner}
+                              </div>
                             </td>
                           );
                         }
@@ -385,9 +426,11 @@ export default async function SurvivorHomePage({
                           <td key={w.id}>
                             <Link
                               href={`/survivor/${entry.id}?week=${w.week_number}`}
+                              title={title}
+                              style={bonusStyle}
                               className={`${base} ${
                                 cell.pick
-                                  ? "border-edge bg-surface hover:bg-surface-hover"
+                                  ? "border-edge bg-surface hover:ring-2 hover:ring-gold-400"
                                   : "border-dashed border-edge bg-app hover:bg-surface-hover"
                               }`}
                             >
