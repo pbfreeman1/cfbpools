@@ -43,6 +43,18 @@ export default async function SurvivorEntryPage({
   const pickByWeek = new Map((picks ?? []).map((p) => [p.schedule_id, p]));
   const bonusWeeksUsed = (picks ?? []).filter((p) => p.is_bonus_week).length;
 
+  // Map every used team id -> the week_number it was used in, for the
+  // "Already picked in Week X" label. Built from schedule_id -> week_number
+  // below once we have `weeks`.
+  const weekNumberBySchedule = new Map((weeks ?? []).map((w) => [w.id, w.week_number]));
+  const usedWeekByTeamId = new Map<string, number>();
+  (picks ?? []).forEach((p) => {
+    const wn = weekNumberBySchedule.get(p.schedule_id);
+    if (wn === undefined) return;
+    usedWeekByTeamId.set(p.team_id, wn);
+    if (p.bonus_team_id) usedWeekByTeamId.set(p.bonus_team_id, wn);
+  });
+
   const scheduleIds = (weeks ?? []).map((w) => w.id);
   const { data: games } = await supabase
     .from("games")
@@ -66,10 +78,12 @@ export default async function SurvivorEntryPage({
 
   const now = Date.now();
 
+  type TeamRef = { id: string; school_name: string; logo_url: string | null; conference: string };
+
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12">
       <Link href="/survivor" className="mb-4 inline-block text-sm text-brand-600 hover:underline">
-        &larr; Back to entries
+        &larr; Back to pool home
       </Link>
       <h1 className="mb-1 text-2xl font-bold text-brand-700">
         {entry.entry_name || `Entry ${entry.entry_number}`}
@@ -91,74 +105,76 @@ export default async function SurvivorEntryPage({
       <div className="flex flex-col gap-3">
         {(weeks ?? []).map((week) => {
           const pick = pickByWeek.get(week.id);
-
-          // Teams used by this entry in any OTHER week — excluded from this
-          // week's options, matching the season-long no-reuse rule.
-          const usedElsewhere = new Set<string>();
-          (picks ?? []).forEach((p) => {
-            if (p.schedule_id === week.id) return;
-            usedElsewhere.add(p.team_id);
-            if (p.bonus_team_id) usedElsewhere.add(p.bonus_team_id);
-          });
-
           const weekGames = (games ?? []).filter((g) => g.schedule_id === week.id);
-          const eligibleTeams: {
+
+          // Every SEC team playing this week, whether or not it's currently
+          // selectable — used-elsewhere and kicked-off teams are still shown,
+          // just greyed out with a reason, rather than disappearing.
+          const teamOptions: {
             id: string;
             school_name: string;
             logo_url: string | null;
-            kickoff_time: string;
+            opponent_name: string;
+            disabled: boolean;
+            disabledReason: string | null;
           }[] = [];
+
           weekGames.forEach((g) => {
-            // Supabase's TS types don't know these are single objects (not
-            // arrays) for a to-one embed, so cast through unknown.
-            const home = g.home_team as unknown as {
-              id: string;
-              school_name: string;
-              logo_url: string | null;
-              conference: string;
-            };
-            const away = g.away_team as unknown as {
-              id: string;
-              school_name: string;
-              logo_url: string | null;
-              conference: string;
-            };
-            [home, away].forEach((team) => {
-              if (
-                team.conference === "SEC" &&
-                !usedElsewhere.has(team.id) &&
-                new Date(g.kickoff_time).getTime() > now
-              ) {
-                eligibleTeams.push({
-                  id: team.id,
-                  school_name: team.school_name,
-                  logo_url: team.logo_url,
-                  kickoff_time: g.kickoff_time,
-                });
+            const home = g.home_team as unknown as TeamRef;
+            const away = g.away_team as unknown as TeamRef;
+            const kickoffPassed = new Date(g.kickoff_time).getTime() <= now;
+
+            [
+              { team: home, opponent: away },
+              { team: away, opponent: home },
+            ].forEach(({ team, opponent }) => {
+              if (team.conference !== "SEC") return;
+
+              // A team already used by THIS week's own current pick should
+              // never show as "already used" — exclude it from that check.
+              const usedInWeek =
+                team.id !== pick?.team_id && team.id !== pick?.bonus_team_id
+                  ? usedWeekByTeamId.get(team.id)
+                  : undefined;
+
+              let disabledReason: string | null = null;
+              if (usedInWeek !== undefined) {
+                disabledReason = `Already picked — Week ${usedInWeek}`;
+              } else if (kickoffPassed) {
+                disabledReason = "Game already started";
               }
+
+              teamOptions.push({
+                id: team.id,
+                school_name: team.school_name,
+                logo_url: team.logo_url,
+                opponent_name: opponent.school_name,
+                disabled: disabledReason !== null,
+                disabledReason,
+              });
             });
           });
-          eligibleTeams.sort((a, b) => a.school_name.localeCompare(b.school_name));
+          teamOptions.sort((a, b) => a.school_name.localeCompare(b.school_name));
 
           // Locked if a pick exists and either of its games has kicked off,
-          // or if no pick exists and there are no eligible teams left.
+          // or if no pick exists and there are no selectable teams left.
           let locked = false;
           if (pick) {
             const pickGames = weekGames.filter(
               (g) =>
                 [
-                  (g.home_team as unknown as { id: string }).id,
-                  (g.away_team as unknown as { id: string }).id,
+                  (g.home_team as unknown as TeamRef).id,
+                  (g.away_team as unknown as TeamRef).id,
                 ].includes(pick.team_id) ||
                 (pick.bonus_team_id &&
                   [
-                    (g.home_team as unknown as { id: string }).id,
-                    (g.away_team as unknown as { id: string }).id,
+                    (g.home_team as unknown as TeamRef).id,
+                    (g.away_team as unknown as TeamRef).id,
                   ].includes(pick.bonus_team_id))
             );
             locked = pickGames.some((g) => new Date(g.kickoff_time).getTime() <= now);
           } else {
-            locked = eligibleTeams.length === 0;
+            locked = teamOptions.every((t) => t.disabled);
           }
 
           return (
@@ -181,7 +197,7 @@ export default async function SurvivorEntryPage({
                     }
                   : null
               }
-              eligibleTeams={eligibleTeams}
+              teamOptions={teamOptions}
               bonusWeeksUsed={bonusWeeksUsed}
             />
           );

@@ -7,7 +7,9 @@ type TeamOption = {
   id: string;
   school_name: string;
   logo_url: string | null;
-  kickoff_time: string;
+  opponent_name: string;
+  disabled: boolean;
+  disabledReason: string | null;
 };
 
 export default function WeekPickCard({
@@ -16,7 +18,7 @@ export default function WeekPickCard({
   weekNumber,
   locked,
   currentPick,
-  eligibleTeams,
+  teamOptions,
   bonusWeeksUsed,
 }: {
   entryId: string;
@@ -30,7 +32,7 @@ export default function WeekPickCard({
     bonus_team_id: string | null;
     bonus_team_name: string | null;
   } | null;
-  eligibleTeams: TeamOption[];
+  teamOptions: TeamOption[];
   bonusWeeksUsed: number;
 }) {
   const [editing, setEditing] = useState(false);
@@ -39,6 +41,43 @@ export default function WeekPickCard({
   const [selectedBonusTeam, setSelectedBonusTeam] = useState(currentPick?.bonus_team_id ?? "");
 
   const canUseBonus = bonusWeeksUsed < 2 || currentPick?.is_bonus_week;
+
+  function TeamButton({
+    team,
+    selected,
+    onSelect,
+  }: {
+    team: TeamOption;
+    selected: boolean;
+    onSelect: () => void;
+  }) {
+    return (
+      <button
+        type="button"
+        disabled={team.disabled}
+        onClick={onSelect}
+        className={
+          "flex flex-col gap-1 rounded-md border px-2 py-2 text-left text-sm transition " +
+          (team.disabled
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60"
+            : selected
+              ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
+              : "border-slate-300 text-slate-700 hover:bg-slate-50")
+        }
+      >
+        <span className="flex items-center gap-2">
+          {team.logo_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0" />
+          )}
+          <span className="truncate">{team.school_name}</span>
+        </span>
+        <span className="truncate text-xs text-slate-500">
+          {team.disabled ? team.disabledReason : `vs ${team.opponent_name}`}
+        </span>
+      </button>
+    );
+  }
 
   // Locked, view-only state
   if (locked && !editing) {
@@ -64,9 +103,6 @@ export default function WeekPickCard({
     );
   }
 
-  // Editable state (either not locked, or locked but a pick exists and we
-  // want to show what was picked even though it can no longer change —
-  // this branch only reaches here when not locked).
   if (!editing) {
     return (
       <div className="rounded-md border border-slate-300 px-4 py-3">
@@ -93,6 +129,8 @@ export default function WeekPickCard({
     );
   }
 
+  const selectableCount = teamOptions.filter((t) => !t.disabled).length;
+
   return (
     <form
       action={savePick}
@@ -116,28 +154,17 @@ export default function WeekPickCard({
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-2">
-        {eligibleTeams.map((team) => (
-          <button
+        {teamOptions.map((team) => (
+          <TeamButton
             key={team.id}
-            type="button"
-            onClick={() => setSelectedTeam(team.id)}
-            className={
-              "flex items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition " +
-              (selectedTeam === team.id
-                ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
-                : "border-slate-300 text-slate-700 hover:bg-slate-50")
-            }
-          >
-            {team.logo_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0" />
-            )}
-            <span className="truncate">{team.school_name}</span>
-          </button>
+            team={team}
+            selected={selectedTeam === team.id}
+            onSelect={() => setSelectedTeam(team.id)}
+          />
         ))}
       </div>
 
-      {eligibleTeams.length === 0 && (
+      {selectableCount === 0 && (
         <p className="mb-3 text-sm text-slate-500">
           No eligible teams left for this week (already used, or all games have kicked off).
         </p>
@@ -158,26 +185,15 @@ export default function WeekPickCard({
 
       {isBonusWeek && (
         <div className="mb-3 grid grid-cols-2 gap-2">
-          {eligibleTeams
+          {teamOptions
             .filter((t) => t.id !== selectedTeam)
             .map((team) => (
-              <button
+              <TeamButton
                 key={team.id}
-                type="button"
-                onClick={() => setSelectedBonusTeam(team.id)}
-                className={
-                  "flex items-center gap-2 rounded-md border px-2 py-2 text-left text-sm transition " +
-                  (selectedBonusTeam === team.id
-                    ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
-                    : "border-slate-300 text-slate-700 hover:bg-slate-50")
-                }
-              >
-                {team.logo_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0" />
-                )}
-                <span className="truncate">{team.school_name}</span>
-              </button>
+                team={team}
+                selected={selectedBonusTeam === team.id}
+                onSelect={() => setSelectedBonusTeam(team.id)}
+              />
             ))}
         </div>
       )}

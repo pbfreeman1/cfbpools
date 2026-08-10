@@ -3,9 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { ENTRY_DEADLINE } from "@/lib/season";
 
 export async function createEntry(formData: FormData) {
   const entryName = (formData.get("entryName") as string) || null;
+
+  if (new Date() > ENTRY_DEADLINE) {
+    redirect(`/survivor?error=${encodeURIComponent("The entry deadline has passed")}`);
+  }
 
   const supabase = await createClient();
   const {
