@@ -8,6 +8,7 @@ type TeamOption = {
   school_name: string;
   logo_url: string | null;
   opponent_name: string;
+  primary_color: string | null;
   disabled: boolean;
   disabledReason: string | null;
 };
@@ -56,13 +57,18 @@ export default function WeekPickCard({
         type="button"
         disabled={team.disabled}
         onClick={onSelect}
+        style={
+          !team.disabled && team.primary_color
+            ? { borderLeftColor: team.primary_color, borderLeftWidth: "3px" }
+            : undefined
+        }
         className={
           "flex flex-col gap-1 rounded-md border px-2 py-2 text-left text-sm transition " +
           (team.disabled
-            ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60"
+            ? "cursor-not-allowed border-edge bg-surface-hover opacity-60"
             : selected
-              ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
-              : "border-slate-300 text-slate-700 hover:bg-slate-50")
+              ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+              : "border-edge text-ink hover:bg-surface")
         }
       >
         <span className="flex items-center gap-2">
@@ -72,7 +78,7 @@ export default function WeekPickCard({
           )}
           <span className="truncate">{team.school_name}</span>
         </span>
-        <span className="truncate text-xs text-slate-500">
+        <span className="truncate text-xs text-muted">
           {team.disabled ? team.disabledReason : `vs ${team.opponent_name}`}
         </span>
       </button>
@@ -82,22 +88,22 @@ export default function WeekPickCard({
   // Locked, view-only state
   if (locked && !editing) {
     return (
-      <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="rounded-md border border-edge bg-surface px-4 py-3">
         <div className="mb-1 flex items-center justify-between">
-          <span className="font-semibold text-slate-700">Week {weekNumber}</span>
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+          <span className="font-semibold text-ink">Week {weekNumber}</span>
+          <span className="rounded-full bg-edge px-2 py-0.5 text-xs font-medium text-muted">
             Locked
           </span>
         </div>
         {currentPick ? (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             {currentPick.team_name}
             {currentPick.is_bonus_week && currentPick.bonus_team_name
               ? ` + ${currentPick.bonus_team_name} (bonus)`
               : ""}
           </p>
         ) : (
-          <p className="text-sm text-red-600">No pick was made — missed week.</p>
+          <p className="text-sm text-dead">No pick was made — missed week.</p>
         )}
       </div>
     );
@@ -105,25 +111,25 @@ export default function WeekPickCard({
 
   if (!editing) {
     return (
-      <div className="rounded-md border border-slate-300 px-4 py-3">
+      <div className="rounded-md border border-edge px-4 py-3">
         <div className="mb-1 flex items-center justify-between">
-          <span className="font-semibold text-slate-700">Week {weekNumber}</span>
+          <span className="font-semibold text-ink">Week {weekNumber}</span>
           <button
             onClick={() => setEditing(true)}
-            className="text-sm font-medium text-brand-600 hover:underline"
+            className="text-sm font-medium text-gold-400 hover:underline"
           >
             {currentPick ? "Change" : "Pick"}
           </button>
         </div>
         {currentPick ? (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted">
             {currentPick.team_name}
             {currentPick.is_bonus_week && currentPick.bonus_team_name
               ? ` + ${currentPick.bonus_team_name} (bonus)`
               : ""}
           </p>
         ) : (
-          <p className="text-sm text-slate-400">No pick yet</p>
+          <p className="text-sm text-muted">No pick yet</p>
         )}
       </div>
     );
@@ -134,7 +140,7 @@ export default function WeekPickCard({
   return (
     <form
       action={savePick}
-      className="rounded-md border-2 border-brand-500 px-4 py-3"
+      className="rounded-md border-2 border-gold-500 px-4 py-3"
       onSubmit={() => setEditing(false)}
     >
       <input type="hidden" name="entryId" value={entryId} />
@@ -143,11 +149,11 @@ export default function WeekPickCard({
       {isBonusWeek && <input type="hidden" name="bonusTeamId" value={selectedBonusTeam} />}
 
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-semibold text-slate-700">Week {weekNumber}</span>
+        <span className="font-semibold text-ink">Week {weekNumber}</span>
         <button
           type="button"
           onClick={() => setEditing(false)}
-          className="text-sm text-slate-500 hover:underline"
+          className="text-sm text-muted hover:underline"
         >
           Cancel
         </button>
@@ -165,19 +171,19 @@ export default function WeekPickCard({
       </div>
 
       {selectableCount === 0 && (
-        <p className="mb-3 text-sm text-slate-500">
+        <p className="mb-3 text-sm text-muted">
           No eligible teams left for this week (already used, or all games have kicked off).
         </p>
       )}
 
       {canUseBonus && (
-        <label className="mb-3 flex items-center gap-2 text-sm text-slate-700">
+        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             name="isBonusWeek"
             checked={isBonusWeek}
             onChange={(e) => setIsBonusWeek(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
+            className="h-4 w-4 rounded border-edge"
           />
           Use a bonus pick this week ({2 - bonusWeeksUsed} remaining) — both teams must win
         </label>
@@ -201,7 +207,7 @@ export default function WeekPickCard({
       <button
         type="submit"
         disabled={!selectedTeam || (isBonusWeek && !selectedBonusTeam)}
-        className="w-full rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         Save pick
       </button>

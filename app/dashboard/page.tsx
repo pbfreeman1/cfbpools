@@ -21,27 +21,27 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12 text-center">
-      <h1 className="mb-1 text-2xl font-bold text-brand-700">
+      <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">
         You&apos;re in{profile?.first_name ? `, ${profile.first_name}` : ""}.
       </h1>
-      <p className="mb-1 text-sm text-slate-600">{user.email}</p>
+      <p className="mb-1 text-sm text-muted">{user.email}</p>
       {profile?.is_admin && (
-        <p className="mb-4 text-xs font-medium uppercase tracking-wide text-brand-600">Admin</p>
+        <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gold-400">Admin</p>
       )}
-      <p className="mb-6 mt-4 text-sm text-slate-600">
+      <p className="mb-6 mt-4 text-sm text-muted">
         This confirms signup, email confirmation, login, and Supabase session handling are all
         working.
       </p>
       <Link
         href="/survivor"
-        className="mb-3 block rounded-md bg-brand-600 px-4 py-2.5 text-center text-base font-semibold text-white transition hover:bg-brand-700"
+        className="mb-3 block rounded-md bg-gold-500 px-4 py-2.5 text-center text-base font-semibold text-app transition hover:bg-gold-600"
       >
         SEC Survivor Pool
       </Link>
       <form action={signOut}>
         <button
           type="submit"
-          className="rounded-md border border-slate-300 px-4 py-2.5 text-base font-medium text-slate-700 transition hover:bg-slate-100"
+          className="rounded-md border border-edge px-4 py-2.5 text-base font-medium text-ink transition hover:bg-surface-hover"
         >
           Log out
         </button>

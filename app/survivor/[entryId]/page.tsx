@@ -60,8 +60,8 @@ export default async function SurvivorEntryPage({
     .from("games")
     .select(
       `id, schedule_id, kickoff_time,
-       home_team:master_teams!games_home_team_id_fkey(id, school_name, logo_url, conference),
-       away_team:master_teams!games_away_team_id_fkey(id, school_name, logo_url, conference)`
+       home_team:master_teams!games_home_team_id_fkey(id, school_name, logo_url, conference, primary_color),
+       away_team:master_teams!games_away_team_id_fkey(id, school_name, logo_url, conference, primary_color)`
     )
     .in("schedule_id", scheduleIds);
 
@@ -78,28 +78,34 @@ export default async function SurvivorEntryPage({
 
   const now = Date.now();
 
-  type TeamRef = { id: string; school_name: string; logo_url: string | null; conference: string };
+  type TeamRef = {
+    id: string;
+    school_name: string;
+    logo_url: string | null;
+    conference: string;
+    primary_color: string | null;
+  };
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12">
-      <Link href="/survivor" className="mb-4 inline-block text-sm text-brand-600 hover:underline">
+      <Link href="/survivor" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
         &larr; Back to pool home
       </Link>
-      <h1 className="mb-1 text-2xl font-bold text-brand-700">
+      <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">
         {entry.entry_name || `Entry ${entry.entry_number}`}
       </h1>
-      <p className="mb-6 text-sm text-slate-600">
+      <p className="mb-6 text-sm text-muted">
         {entry.status === "eliminated" ? "Eliminated" : "Alive"} &middot; {bonusWeeksUsed}/2 bonus
         picks used
       </p>
 
       {sp.saved && (
-        <p className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
           Pick saved.
         </p>
       )}
       {sp.error && (
-        <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{sp.error}</p>
+        <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{sp.error}</p>
       )}
 
       <div className="flex flex-col gap-3">
@@ -115,6 +121,7 @@ export default async function SurvivorEntryPage({
             school_name: string;
             logo_url: string | null;
             opponent_name: string;
+            primary_color: string | null;
             disabled: boolean;
             disabledReason: string | null;
           }[] = [];
@@ -149,6 +156,7 @@ export default async function SurvivorEntryPage({
                 school_name: team.school_name,
                 logo_url: team.logo_url,
                 opponent_name: opponent.school_name,
+                primary_color: team.primary_color,
                 disabled: disabledReason !== null,
                 disabledReason,
               });

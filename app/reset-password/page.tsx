@@ -9,18 +9,18 @@ export default async function ResetPasswordPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6 py-12">
-      <h1 className="mb-1 text-2xl font-bold text-brand-700">Set a new password</h1>
-      <p className="mb-6 text-sm text-slate-600">Choose a new password for your account.</p>
+      <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">Set a new password</h1>
+      <p className="mb-6 text-sm text-muted">Choose a new password for your account.</p>
 
       {params.error && (
-        <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">
           {params.error}
         </p>
       )}
 
       <form action={updatePassword} className="flex flex-col gap-4">
         <div>
-          <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="password" className="mb-1 block text-sm font-medium text-ink">
             New password
           </label>
           <input
@@ -30,13 +30,13 @@ export default async function ResetPasswordPage({
             required
             minLength={8}
             autoComplete="new-password"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
         </div>
         <div>
           <label
             htmlFor="confirmPassword"
-            className="mb-1 block text-sm font-medium text-slate-700"
+            className="mb-1 block text-sm font-medium text-ink"
           >
             Confirm new password
           </label>
@@ -47,12 +47,12 @@ export default async function ResetPasswordPage({
             required
             minLength={8}
             autoComplete="new-password"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
         </div>
         <button
           type="submit"
-          className="mt-2 rounded-md bg-brand-600 px-4 py-2.5 text-base font-semibold text-white transition hover:bg-brand-700"
+          className="mt-2 rounded-md bg-gold-500 px-4 py-2.5 text-base font-semibold text-app transition hover:bg-gold-600"
         >
           Update password
         </button>
