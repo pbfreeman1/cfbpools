@@ -94,10 +94,17 @@ export default async function SurvivorEntryPage({
       <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">
         {entry.entry_name || `Entry ${entry.entry_number}`}
       </h1>
-      <p className="mb-6 text-sm text-muted">
+      <p className="mb-4 text-sm text-muted">
         {entry.status === "eliminated" ? "Eliminated" : "Alive"} &middot; {bonusWeeksUsed}/2 bonus
         picks used
       </p>
+
+      <Link
+        href={`/survivor/${entryId}/bonus`}
+        className="mb-6 block rounded-md border border-gold-500 px-4 py-2.5 text-center text-sm font-semibold text-gold-400 transition hover:bg-gold-500/10"
+      >
+        Manage Bonus Picks
+      </Link>
 
       {sp.saved && (
         <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
@@ -206,7 +213,6 @@ export default async function SurvivorEntryPage({
                   : null
               }
               teamOptions={teamOptions}
-              bonusWeeksUsed={bonusWeeksUsed}
               autoOpen={sp.week === String(week.week_number)}
             />
           );

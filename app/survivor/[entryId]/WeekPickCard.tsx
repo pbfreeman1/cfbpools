@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { savePick } from "@/app/actions/survivor";
 
 type TeamOption = {
@@ -20,7 +21,6 @@ export default function WeekPickCard({
   locked,
   currentPick,
   teamOptions,
-  bonusWeeksUsed,
   autoOpen,
 }: {
   entryId: string;
@@ -35,10 +35,10 @@ export default function WeekPickCard({
     bonus_team_name: string | null;
   } | null;
   teamOptions: TeamOption[];
-  bonusWeeksUsed: number;
   autoOpen?: boolean;
 }) {
-  const [editing, setEditing] = useState(Boolean(autoOpen) && !locked);
+  const [editing, setEditing] = useState(Boolean(autoOpen) && !locked && !currentPick?.is_bonus_week);
+  const [selectedTeam, setSelectedTeam] = useState(currentPick?.team_id ?? "");
 
   useEffect(() => {
     if (autoOpen) {
@@ -46,26 +46,14 @@ export default function WeekPickCard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [selectedTeam, setSelectedTeam] = useState(currentPick?.team_id ?? "");
-  const [isBonusWeek, setIsBonusWeek] = useState(currentPick?.is_bonus_week ?? false);
-  const [selectedBonusTeam, setSelectedBonusTeam] = useState(currentPick?.bonus_team_id ?? "");
 
-  const canUseBonus = bonusWeeksUsed < 2 || currentPick?.is_bonus_week;
-
-  function TeamButton({
-    team,
-    selected,
-    onSelect,
-  }: {
-    team: TeamOption;
-    selected: boolean;
-    onSelect: () => void;
-  }) {
+  function TeamButton({ team }: { team: TeamOption }) {
+    const selected = selectedTeam === team.id;
     return (
       <button
         type="button"
         disabled={team.disabled}
-        onClick={onSelect}
+        onClick={() => setSelectedTeam(team.id)}
         style={
           !team.disabled && team.primary_color
             ? { borderLeftColor: team.primary_color, borderLeftWidth: "3px" }
@@ -94,6 +82,35 @@ export default function WeekPickCard({
     );
   }
 
+  // A bonus week is always managed on the dedicated Bonus Picks page — this
+  // card just shows what was chosen, read-only, with a link over there.
+  if (currentPick?.is_bonus_week) {
+    return (
+      <div
+        id={`week-${weekNumber}`}
+        className="rounded-md border border-gold-500 bg-gold-500/5 px-4 py-3"
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <span className="font-semibold text-ink">Week {weekNumber}</span>
+          <span className="rounded-full bg-gold-500/20 px-2 py-0.5 text-xs font-medium text-gold-400">
+            Bonus week
+          </span>
+        </div>
+        <p className="mb-1 text-sm text-muted">
+          {currentPick.team_name} + {currentPick.bonus_team_name}
+        </p>
+        {!locked && (
+          <Link
+            href={`/survivor/${entryId}/bonus`}
+            className="text-sm font-medium text-gold-400 hover:underline"
+          >
+            Manage on Bonus Picks page &rarr;
+          </Link>
+        )}
+      </div>
+    );
+  }
+
   // Locked, view-only state
   if (locked && !editing) {
     return (
@@ -105,12 +122,7 @@ export default function WeekPickCard({
           </span>
         </div>
         {currentPick ? (
-          <p className="text-sm text-muted">
-            {currentPick.team_name}
-            {currentPick.is_bonus_week && currentPick.bonus_team_name
-              ? ` + ${currentPick.bonus_team_name} (bonus)`
-              : ""}
-          </p>
+          <p className="text-sm text-muted">{currentPick.team_name}</p>
         ) : (
           <p className="text-sm text-dead">No pick was made — missed week.</p>
         )}
@@ -131,12 +143,7 @@ export default function WeekPickCard({
           </button>
         </div>
         {currentPick ? (
-          <p className="text-sm text-muted">
-            {currentPick.team_name}
-            {currentPick.is_bonus_week && currentPick.bonus_team_name
-              ? ` + ${currentPick.bonus_team_name} (bonus)`
-              : ""}
-          </p>
+          <p className="text-sm text-muted">{currentPick.team_name}</p>
         ) : (
           <p className="text-sm text-muted">No pick yet</p>
         )}
@@ -148,15 +155,14 @@ export default function WeekPickCard({
 
   return (
     <form
-      action={savePick}
       id={`week-${weekNumber}`}
+      action={savePick}
       className="rounded-md border-2 border-gold-500 px-4 py-3"
       onSubmit={() => setEditing(false)}
     >
       <input type="hidden" name="entryId" value={entryId} />
       <input type="hidden" name="scheduleId" value={scheduleId} />
       <input type="hidden" name="teamId" value={selectedTeam} />
-      {isBonusWeek && <input type="hidden" name="bonusTeamId" value={selectedBonusTeam} />}
 
       <div className="mb-2 flex items-center justify-between">
         <span className="font-semibold text-ink">Week {weekNumber}</span>
@@ -171,12 +177,7 @@ export default function WeekPickCard({
 
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {teamOptions.map((team) => (
-          <TeamButton
-            key={team.id}
-            team={team}
-            selected={selectedTeam === team.id}
-            onSelect={() => setSelectedTeam(team.id)}
-          />
+          <TeamButton key={team.id} team={team} />
         ))}
       </div>
 
@@ -186,37 +187,9 @@ export default function WeekPickCard({
         </p>
       )}
 
-      {canUseBonus && (
-        <label className="mb-3 flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            name="isBonusWeek"
-            checked={isBonusWeek}
-            onChange={(e) => setIsBonusWeek(e.target.checked)}
-            className="h-4 w-4 rounded border-edge"
-          />
-          Use a bonus pick this week ({2 - bonusWeeksUsed} remaining) — both teams must win
-        </label>
-      )}
-
-      {isBonusWeek && (
-        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {teamOptions
-            .filter((t) => t.id !== selectedTeam)
-            .map((team) => (
-              <TeamButton
-                key={team.id}
-                team={team}
-                selected={selectedBonusTeam === team.id}
-                onSelect={() => setSelectedBonusTeam(team.id)}
-              />
-            ))}
-        </div>
-      )}
-
       <button
         type="submit"
-        disabled={!selectedTeam || (isBonusWeek && !selectedBonusTeam)}
+        disabled={!selectedTeam}
         className="w-full rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600 disabled:cursor-not-allowed disabled:opacity-50"
       >
         Save pick
