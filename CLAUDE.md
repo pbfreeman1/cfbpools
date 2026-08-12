@@ -104,7 +104,36 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
   (`running`/`success`/`error`), `games_updated`, `error_message`,
   `triggered_by` (nullable uuid — null means cron-triggered, set means
   a specific admin manually triggered it). RLS: admin-only
-  select/insert/update. Not yet wired into
-  `supabase/functions/cfbd-sync/index.ts` as of this note — that's
-  Task 1 of the admin portal build.
+  select/insert/update. Wired into `supabase/functions/cfbd-sync/index.ts`
+  (writes a `running` row on start, updates to `success`/`error` on
+  completion; log writes are isolated in their own try/catch so a
+  logging failure can never crash the sync).
+- `admin_actions` — generic audit trail for admin-initiated writes that
+  aren't already covered by a table-specific `_log` trigger (e.g.
+  `survivor_entries.status` changes from the elimination workflow, which
+  `survivor_picks_log` doesn't touch). Columns: `id`, `admin_id`,
+  `action` (text, e.g. `'eliminate_entry'` / `'reinstate_entry'`),
+  `target_table` (text), `target_id` (uuid), `previous_value` (jsonb),
+  `new_value` (jsonb), `note` (text), `created_at`. RLS: admin-only
+  select/insert. Reuse this pattern for other admin overrides (manual
+  entry edits, etc.) rather than adding new one-off log tables.
+- `profiles_update_admin` RLS policy (`is_admin()`, both `USING` and
+  `WITH CHECK`) — lets admins update other users' `profiles` rows (e.g.
+  toggling `is_admin` from the Users page). `profiles_update_own` still
+  governs self-updates and independently guards against a user
+  escalating their own `is_admin` flag.
+- `survivor_entries_update_own` RLS policy was simplified to a plain
+  ownership check (`user_id = auth.uid()` for both `USING` and
+  `WITH CHECK`) — it previously had a self-referential subquery bug.
+  Protection against users changing their own `status` or
+  `eliminated_week_number` is now enforced by a `BEFORE UPDATE` trigger,
+  `trg_protect_survivor_entries_status` →
+  `protect_survivor_entries_status()`: compares `OLD` vs `NEW` and raises
+  an exception on a `status`/`eliminated_week_number` change unless
+  `is_admin()` is true. Triggers fire even for service-role connections
+  (RLS bypass doesn't skip triggers), and `is_admin()` reads
+  `auth.uid()` — which is null for a service-role client — so status
+  changes must be written via the logged-in admin's cookie-based
+  session (the normal `createClient()` server pattern), not a
+  service-role client, or the trigger raises.
 
