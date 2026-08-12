@@ -240,7 +240,7 @@ export default async function BonusPicksPage({
                   <span className="flex items-center gap-1.5">
                     {w.teamLogo && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={w.teamLogo} alt="" className="h-5 w-5" />
+                      <img src={w.teamLogo} alt="" className="h-5 w-5 object-contain" />
                     )}
                     {w.teamName}
                   </span>
@@ -248,7 +248,7 @@ export default async function BonusPicksPage({
                   <span className="flex items-center gap-1.5">
                     {w.bonusTeamLogo && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={w.bonusTeamLogo} alt="" className="h-5 w-5" />
+                      <img src={w.bonusTeamLogo} alt="" className="h-5 w-5 object-contain" />
                     )}
                     {w.bonusTeamName}
                   </span>

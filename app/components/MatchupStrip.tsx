@@ -65,7 +65,7 @@ export default async function MatchupStrip() {
                 <div className="flex items-center gap-1.5">
                   {away.logo_url && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={away.logo_url} alt="" className="h-6 w-6" />
+                    <img src={away.logo_url} alt="" className="h-6 w-6 object-contain" />
                   )}
                   {away.primary_color && (
                     <span
@@ -90,7 +90,7 @@ export default async function MatchupStrip() {
                 <div className="flex items-center gap-1.5">
                   {home.logo_url && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={home.logo_url} alt="" className="h-6 w-6" />
+                    <img src={home.logo_url} alt="" className="h-6 w-6 object-contain" />
                   )}
                   {home.primary_color && (
                     <span

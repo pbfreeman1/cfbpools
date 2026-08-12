@@ -359,7 +359,7 @@ export default async function SurvivorHomePage({
                                 <img
                                   src={cell.pick.logoUrl}
                                   alt=""
-                                  className="absolute left-1 top-1 h-5 w-5 drop-shadow"
+                                  className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
                                 />
                               )}
                               {cell.pick.bonusLogoUrl && (
@@ -367,18 +367,15 @@ export default async function SurvivorHomePage({
                                 <img
                                   src={cell.pick.bonusLogoUrl}
                                   alt=""
-                                  className="absolute bottom-1 right-1 h-5 w-5 drop-shadow"
+                                  className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
                                 />
                               )}
-                              <span className="absolute inset-x-0 bottom-0 bg-app/70 text-[7px] font-bold uppercase leading-tight text-gold-300">
-                                Bonus
-                              </span>
                             </>
                           ) : (
                             <>
                               {cell.pick.logoUrl && (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={cell.pick.logoUrl} alt="" className="h-5 w-5" />
+                                <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
                               )}
                               {cell.pick.color && (
                                 <span

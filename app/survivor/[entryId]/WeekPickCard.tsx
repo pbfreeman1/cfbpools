@@ -71,7 +71,7 @@ export default function WeekPickCard({
         <span className="flex items-center gap-2">
           {team.logo_url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0" />
+            <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
           )}
           <span className="truncate">{team.school_name}</span>
         </span>
