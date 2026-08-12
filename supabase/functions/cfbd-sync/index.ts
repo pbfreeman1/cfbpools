@@ -6,6 +6,9 @@
 // advance, and the admin curates which 6 games are eligible for Pickem).
 //
 // Invoke with a POST body of { "year": 2026 } (defaults to the current year).
+// Add "triggered_by": "<admin user id>" when invoking manually from the admin
+// portal so the sync_logs row records who kicked it off; cron invocations
+// omit it and are logged with triggered_by = null.
 // Safe to re-run: everything is upserted on its CFBD id, so running this
 // again just refreshes scores/status for games already in the table.
 
@@ -20,25 +23,59 @@ function cfbdHeaders(apiKey: string) {
   };
 }
 
-Deno.serve(async (req) => {
+// sync_logs writes are never allowed to crash the actual sync — each is its
+// own try/catch, separate from the sync logic's error handling.
+async function startSyncLog(
+  supabase: ReturnType<typeof createClient>,
+  triggeredBy: string | null
+): Promise<string | null> {
   try {
-    const body = await req.json().catch(() => ({}));
-    const season = body.year ?? new Date().getFullYear();
+    const { data, error } = await supabase
+      .from("sync_logs")
+      .insert({ source: "cfbd", status: "running", triggered_by: triggeredBy })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return data.id as string;
+  } catch (err) {
+    console.error("[cfbd-sync] Failed to create sync_logs row:", err);
+    return null;
+  }
+}
 
+async function finishSyncLog(
+  supabase: ReturnType<typeof createClient>,
+  syncLogId: string | null,
+  update: Record<string, unknown>
+) {
+  if (!syncLogId) return;
+  try {
+    const { error } = await supabase.from("sync_logs").update(update).eq("id", syncLogId);
+    if (error) throw error;
+  } catch (err) {
+    console.error("[cfbd-sync] Failed to update sync_logs row:", err);
+  }
+}
+
+Deno.serve(async (req) => {
+  const body = await req.json().catch(() => ({}));
+  const season = body.year ?? new Date().getFullYear();
+  const triggeredBy: string | null = body.triggered_by ?? null;
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  // Service role client — this job runs with full DB access and bypasses
+  // RLS by design, since it's a trusted server-side sync, not a user action.
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  const syncLogId = await startSyncLog(supabase, triggeredBy);
+
+  try {
     const CFBD_API_KEY = Deno.env.get("CFBD_API_KEY");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
     if (!CFBD_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: "CFBD_API_KEY secret is not set on this project" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      throw new Error("CFBD_API_KEY secret is not set on this project");
     }
-
-    // Service role client — this job runs with full DB access and bypasses
-    // RLS by design, since it's a trusted server-side sync, not a user action.
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
     // 1. Teams — every FBS team, since Pickem can pull from any FBS matchup,
     // not just SEC.
@@ -175,6 +212,12 @@ Deno.serve(async (req) => {
       gamesSynced++;
     }
 
+    await finishSyncLog(supabase, syncLogId, {
+      status: "success",
+      completed_at: new Date().toISOString(),
+      games_updated: gamesSynced,
+    });
+
     return new Response(
       JSON.stringify({
         season,
@@ -190,6 +233,12 @@ Deno.serve(async (req) => {
       { headers: { "Content-Type": "application/json" } }
     );
   } catch (err) {
+    await finishSyncLog(supabase, syncLogId, {
+      status: "error",
+      completed_at: new Date().toISOString(),
+      error_message: (err as Error).message,
+    });
+
     return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
