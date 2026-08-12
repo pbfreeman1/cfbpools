@@ -40,3 +40,48 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 
 ## Supabase project
 - Project ref: `jdjhfyjxtlncuuqonvxm` (region: us-east-1)
+- 
+
+## Environment Variables — Critical
+
+- `NEXT_PUBLIC_SITE_URL` must be set to `https://cfbpools.com` in Vercel (Production).
+  Used in `app/actions/auth.ts` to build Supabase `emailRedirectTo` URLs. If missing,
+  it resolves to the literal string "undefined" and breaks signup confirmation emails
+  with a 500 error. `NEXT_PUBLIC_` vars are baked in at build time — changing this
+  requires a new deployment, not just a restart.
+- `RESEND_API_KEY` — used for app-level transactional emails via `lib/email.ts`.
+- Supabase auth emails (signup confirmation, password reset) are routed through
+  Resend via Custom SMTP, configured in Supabase Dashboard → Authentication →
+  SMTP Settings (Host: smtp.resend.com, Port: 465, Username: resend, Password:
+  Resend API key, Sender: noreply@mail.cfbpools.com). Watch for typos in the Host
+  field — a stray trailing character there caused a silent DNS lookup failure.
+
+## Supabase Auth Configuration
+
+- Site URL (Authentication → URL Configuration) must be `https://cfbpools.com`,
+  not the `localhost:3000` default.
+- Redirect URLs allow-list must include `https://cfbpools.com/**` (and optionally
+  `http://localhost:3000/**` for local dev) or auth redirects will fail to match
+  and fall back unpredictably.
+
+## GitHub Branch Protection
+
+- `main` requires changes via pull request — direct pushes are rejected
+  (GH013 rule violation), including from local `git push origin main`.
+- Standard workflow: work on `dev` → push → Vercel auto-builds a preview deployment
+  at that branch's preview URL → test there → open a PR from `dev` into `main` →
+  merge → Vercel auto-deploys `main` to production (cfbpools.com).
+- Even trivial changes (e.g. triggering a redeploy after an env var change) need
+  to go through a branch + PR, not a direct push to `main`.
+
+## Domain / DNS
+
+- cfbpools.com DNS is managed in Squarespace. Previously pointed to Bubble
+  (old app); now points to Vercel via an A record (@ → Vercel's IP) and CNAME
+  (www → Vercel's CNAME target).
+- Resend sends from the `mail.cfbpools.com` subdomain (verified separately from
+  the root domain, which is not Resend-verified and shouldn't be used as a
+  sender address).
+- Google Workspace MX/TXT/DKIM records and SendGrid CNAME records also live in
+  this DNS zone for existing email — don't touch those when managing site or
+  Resend records.
