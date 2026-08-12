@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { computeEliminations, type SurvivorPick } from "@/lib/survivorElimination";
+import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameResult } from "@/lib/survivorElimination";
 
 // Every admin server action re-checks is_admin() itself rather than relying
 // on the app/admin/layout.tsx redirect — the layout only guards page
@@ -75,7 +75,7 @@ export async function commitWeekResults(formData: FormData) {
     redirect("/admin/survivor/results?error=" + encodeURIComponent(gamesErr.message));
   }
 
-  const teamResult = new Map<string, boolean>();
+  const settledGames: GameResult[] = [];
 
   for (const game of games ?? []) {
     let status = game.status;
@@ -105,12 +105,20 @@ export async function commitWeekResults(formData: FormData) {
       }
     }
 
-    if (status === "final" && homeScore !== null && awayScore !== null && homeScore !== awayScore) {
-      const homeWon = homeScore > awayScore;
-      teamResult.set(game.home_team_id, homeWon);
-      teamResult.set(game.away_team_id, !homeWon);
-    }
+    settledGames.push({
+      id: game.id,
+      status,
+      homeScore,
+      awayScore,
+      homeTeamId: game.home_team_id,
+      awayTeamId: game.away_team_id,
+    });
   }
+
+  // Overrides are already baked into settledGames' status/scores above, so
+  // this reuses the exact same map-building logic as the preview with no
+  // further overrides to apply.
+  const teamResult = buildTeamResultMap(settledGames, new Map());
 
   const { data: pickRows, error: picksErr } = await supabase
     .from("survivor_picks")

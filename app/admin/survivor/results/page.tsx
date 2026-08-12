@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { computeEliminations, type SurvivorPick } from "@/lib/survivorElimination";
+import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameResult } from "@/lib/survivorElimination";
 import { commitWeekResults, reinstateEntry } from "@/app/actions/admin-survivor";
 
 type TeamRef = {
@@ -85,25 +85,24 @@ export default async function AdminSurvivorResultsPage({
   const games = (gamesData ?? []) as unknown as GameRow[];
 
   // Real final results + (in preview mode only) the admin's proposed
-  // winners for games that aren't final yet.
-  const teamResult = new Map<string, boolean>();
-  for (const g of games) {
-    if (g.status === "final" && g.home_score !== null && g.away_score !== null && g.home_score !== g.away_score) {
-      const homeWon = g.home_score > g.away_score;
-      teamResult.set(g.home_team.id, homeWon);
-      teamResult.set(g.away_team.id, !homeWon);
-    } else if (isPreview) {
+  // winners for games that aren't final yet, read out of the query string.
+  const overrideWinnerByGameId = new Map<string, string>();
+  if (isPreview) {
+    for (const g of games) {
       const raw = params[`game_${g.id}`];
       const winnerId = Array.isArray(raw) ? raw[0] : raw;
-      if (winnerId === g.home_team.id) {
-        teamResult.set(g.home_team.id, true);
-        teamResult.set(g.away_team.id, false);
-      } else if (winnerId === g.away_team.id) {
-        teamResult.set(g.away_team.id, true);
-        teamResult.set(g.home_team.id, false);
-      }
+      if (winnerId) overrideWinnerByGameId.set(g.id, winnerId);
     }
   }
+  const gameResults: GameResult[] = games.map((g) => ({
+    id: g.id,
+    status: g.status,
+    homeScore: g.home_score,
+    awayScore: g.away_score,
+    homeTeamId: g.home_team.id,
+    awayTeamId: g.away_team.id,
+  }));
+  const teamResult = buildTeamResultMap(gameResults, overrideWinnerByGameId);
 
   const { data: pickRows } = await supabase
     .from("survivor_picks")

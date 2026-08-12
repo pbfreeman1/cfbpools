@@ -53,20 +53,67 @@ export function computeEliminations(
       continue;
     }
 
-    // Bonus week — both the pick and the bonus pick must win.
+    // Bonus week — both the pick and the bonus pick must win. A single
+    // confirmed loss is enough to eliminate immediately; we don't need to
+    // wait on the other game's result too.
     const bonusWon = pick.bonusTeamId ? teamResult.get(pick.bonusTeamId) : undefined;
-    if (teamWon === undefined || bonusWon === undefined) {
-      pending.push({ entryId: pick.entryId, entryName: pick.entryName });
-      continue;
-    }
-    if (!teamWon || !bonusWon) {
+    if (teamWon === false || bonusWon === false) {
       eliminations.push({
         entryId: pick.entryId,
         entryName: pick.entryName,
         reason: `Bonus week in Week ${weekNumber} — both picks must win`,
       });
+      continue;
     }
+    if (teamWon === undefined || bonusWon === undefined) {
+      pending.push({ entryId: pick.entryId, entryName: pick.entryName });
+    }
+    // Both defined and both true: entry survives, no action needed.
   }
 
   return { eliminations, pending };
+}
+
+export type GameResult = {
+  id: string;
+  status: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  homeTeamId: string;
+  awayTeamId: string;
+};
+
+/**
+ * Builds the teamId -> won map computeEliminations expects, from
+ * already-final games plus manual winner overrides for games that aren't
+ * final yet (e.g. an admin's form selections before anything is committed).
+ * Pulled out as its own function — rather than left inline in the results
+ * page — so the params-to-map wiring itself is unit-testable, not just the
+ * elimination math downstream of it.
+ */
+export function buildTeamResultMap(
+  games: GameResult[],
+  overrideWinnerByGameId: Map<string, string>
+): Map<string, boolean> {
+  const teamResult = new Map<string, boolean>();
+
+  for (const g of games) {
+    if (g.status === "final" && g.homeScore !== null && g.awayScore !== null && g.homeScore !== g.awayScore) {
+      const homeWon = g.homeScore > g.awayScore;
+      teamResult.set(g.homeTeamId, homeWon);
+      teamResult.set(g.awayTeamId, !homeWon);
+      continue;
+    }
+
+    const winnerId = overrideWinnerByGameId.get(g.id);
+    if (winnerId === g.homeTeamId) {
+      teamResult.set(g.homeTeamId, true);
+      teamResult.set(g.awayTeamId, false);
+    } else if (winnerId === g.awayTeamId) {
+      teamResult.set(g.awayTeamId, true);
+      teamResult.set(g.homeTeamId, false);
+    }
+  }
+
+  return teamResult;
 }
