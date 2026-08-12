@@ -205,3 +205,162 @@ export async function reinstateEntry(formData: FormData) {
   revalidatePath("/admin");
   redirect("/admin/survivor/results?reinstated=1");
 }
+
+export async function createEntryAdmin(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const targetUserId = formData.get("userId") as string;
+  const entryName = (formData.get("entryName") as string) || null;
+  if (!targetUserId) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent("Pick a user"));
+  }
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("survivor_entries")
+    .select("entry_number")
+    .eq("user_id", targetUserId);
+  if (existingErr) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent(existingErr.message));
+  }
+  if ((existing?.length ?? 0) >= 2) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent("That user already has 2 entries"));
+  }
+  const entryNumber = existing?.some((e) => e.entry_number === 1) ? 2 : 1;
+
+  const { data: created, error } = await supabase
+    .from("survivor_entries")
+    .insert({ user_id: targetUserId, entry_number: entryNumber, entry_name: entryName })
+    .select("id")
+    .single();
+  if (error) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "create_entry",
+    "survivor_entries",
+    created!.id,
+    {},
+    { user_id: targetUserId, entry_number: entryNumber, entry_name: entryName },
+    "Manually created by admin (deadline not enforced for admin overrides)"
+  );
+
+  revalidatePath("/admin/survivor/entries");
+  revalidatePath("/admin");
+  redirect("/admin/survivor/entries?created=1");
+}
+
+export async function updateEntryAdmin(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const entryName = (formData.get("entryName") as string) || null;
+  const status = formData.get("status") as string;
+  const eliminatedWeekRaw = formData.get("eliminatedWeekNumber") as string;
+  const eliminatedWeekNumber =
+    status === "eliminated" && eliminatedWeekRaw ? Number(eliminatedWeekRaw) : null;
+
+  const { data: before, error: fetchErr } = await supabase
+    .from("survivor_entries")
+    .select("entry_name, status, eliminated_week_number")
+    .eq("id", entryId)
+    .single();
+  if (fetchErr || !before) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent("Entry not found"));
+  }
+
+  const { error } = await supabase
+    .from("survivor_entries")
+    .update({ entry_name: entryName, status, eliminated_week_number: eliminatedWeekNumber })
+    .eq("id", entryId);
+  if (error) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "edit_entry",
+    "survivor_entries",
+    entryId,
+    before!,
+    { entry_name: entryName, status, eliminated_week_number: eliminatedWeekNumber },
+    "Manually edited by admin"
+  );
+
+  revalidatePath("/admin/survivor/entries");
+  revalidatePath("/admin/survivor/results");
+  revalidatePath("/admin/survivor/bonus");
+  revalidatePath("/admin");
+  redirect("/admin/survivor/entries?updated=1");
+}
+
+export async function toggleDuesPaid(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const nextValue = formData.get("nextValue") === "true";
+
+  const { error } = await supabase
+    .from("survivor_entries")
+    .update({ dues_paid: nextValue, dues_paid_at: nextValue ? new Date().toISOString() : null })
+    .eq("id", entryId);
+  if (error) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "toggle_dues_paid",
+    "survivor_entries",
+    entryId,
+    { dues_paid: !nextValue },
+    { dues_paid: nextValue },
+    nextValue ? "Marked dues paid" : "Marked dues unpaid"
+  );
+
+  revalidatePath("/admin/survivor/entries");
+  redirect("/admin/survivor/entries");
+}
+
+export async function deleteEntryAdmin(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+
+  const [{ data: entry }, { data: picks }] = await Promise.all([
+    supabase.from("survivor_entries").select("*").eq("id", entryId).single(),
+    supabase.from("survivor_picks").select("*").eq("entry_id", entryId),
+  ]);
+  if (!entry) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent("Entry not found"));
+  }
+
+  // survivor_picks_entry_id_fkey is ON DELETE CASCADE — deleting the entry
+  // also deletes its picks, so a full snapshot goes into admin_actions
+  // before that happens (survivor_picks_log has no FK to entry_id, so those
+  // history rows survive, but the live picks themselves won't).
+  const { error } = await supabase.from("survivor_entries").delete().eq("id", entryId);
+  if (error) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "delete_entry",
+    "survivor_entries",
+    entryId,
+    { entry, picks: picks ?? [] },
+    {},
+    `Deleted by admin — cascaded ${picks?.length ?? 0} pick(s)`
+  );
+
+  revalidatePath("/admin/survivor/entries");
+  revalidatePath("/admin/survivor/bonus");
+  revalidatePath("/admin");
+  redirect("/admin/survivor/entries?deleted=1");
+}
