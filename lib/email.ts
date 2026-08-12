@@ -1,25 +1,12 @@
-/**
- * Thin wrapper around Resend's API. Deliberately never throws — a failed or
- * unconfigured email should never break the actual account/entry/pick
- * action it's attached to. Failures are logged, not surfaced to the user.
- */
-export async function sendEmail({
-  to,
-  subject,
-  html,
-}: {
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<void> {
+type EmailInput = { to: string; subject: string; html: string };
+type DeliverResult = { ok: boolean; error?: string };
+
+async function deliverEmail({ to, subject, html }: EmailInput): Promise<DeliverResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
 
   if (!apiKey || !from) {
-    console.warn(
-      `[email] Skipped "${subject}" to ${to} — RESEND_API_KEY or RESEND_FROM_EMAIL not set.`
-    );
-    return;
+    return { ok: false, error: "RESEND_API_KEY or RESEND_FROM_EMAIL not set" };
   }
 
   try {
@@ -33,11 +20,33 @@ export async function sendEmail({
     });
 
     if (!res.ok) {
-      console.error(`[email] Failed to send "${subject}" to ${to}: ${res.status} ${await res.text()}`);
+      return { ok: false, error: `${res.status} ${await res.text()}` };
     }
+    return { ok: true };
   } catch (err) {
-    console.error(`[email] Error sending "${subject}" to ${to}:`, err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Thin wrapper around Resend's API. Deliberately never throws — a failed or
+ * unconfigured email should never break the actual account/entry/pick
+ * action it's attached to. Failures are logged, not surfaced to the user.
+ */
+export async function sendEmail(input: EmailInput): Promise<void> {
+  const result = await deliverEmail(input);
+  if (!result.ok) {
+    console.warn(`[email] Failed to send "${input.subject}" to ${input.to}: ${result.error}`);
+  }
+}
+
+/**
+ * Same delivery as sendEmail(), but reports success/failure instead of
+ * swallowing it — for the admin test-email tool, where the whole point is
+ * knowing whether it actually went out.
+ */
+export async function sendEmailWithResult(input: EmailInput): Promise<DeliverResult> {
+  return deliverEmail(input);
 }
 
 /** Where admin notifications go — unset means those emails are skipped. */

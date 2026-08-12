@@ -1,27 +1,10 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameResult } from "@/lib/survivorElimination";
-
-// Every admin server action re-checks is_admin() itself rather than relying
-// on the app/admin/layout.tsx redirect — the layout only guards page
-// rendering, not a direct POST to the action. RLS and the
-// protect_survivor_entries_status trigger enforce this too, but checking
-// here gives a clean error instead of a raw Postgres failure.
-async function requireAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/");
-
-  const { data: isAdmin } = await supabase.rpc("is_admin");
-  if (!isAdmin) redirect("/");
-
-  return { supabase, user };
-}
+import { requireAdmin } from "@/lib/adminAuth";
+import type { createClient } from "@/lib/supabase/server";
 
 async function logAdminAction(
   supabase: Awaited<ReturnType<typeof createClient>>,
