@@ -41,6 +41,7 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 ## Supabase project
 - Project ref: `jdjhfyjxtlncuuqonvxm` (region: us-east-1)
 
+
 ## Production environment (critical — learned the hard way)
 
 - `NEXT_PUBLIC_SITE_URL` **must** be set in Vercel (Production) to
@@ -106,3 +107,4 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
   select/insert/update. Not yet wired into
   `supabase/functions/cfbd-sync/index.ts` as of this note — that's
   Task 1 of the admin portal build.
+
