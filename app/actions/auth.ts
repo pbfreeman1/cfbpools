@@ -7,11 +7,16 @@ import { sendEmail, adminEmail, adminNewAccountEmail } from "@/lib/email";
 
 export async function signUp(formData: FormData) {
   const email = formData.get("email") as string;
+  const confirmEmail = formData.get("confirmEmail") as string;
   const password = formData.get("password") as string;
   const confirmPassword = formData.get("confirmPassword") as string;
   const firstName = formData.get("firstName") as string;
   const lastName = formData.get("lastName") as string;
   const phone = formData.get("phone") as string;
+
+  if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+    redirect(`/signup?error=${encodeURIComponent("Emails don't match")}`);
+  }
 
   if (password !== confirmPassword) {
     redirect(`/signup?error=${encodeURIComponent("Passwords don't match")}`);

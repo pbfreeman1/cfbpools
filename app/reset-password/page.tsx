@@ -1,4 +1,5 @@
 import { updatePassword } from "@/app/actions/auth";
+import PasswordInput from "@/app/components/PasswordInput";
 
 export default async function ResetPasswordPage({
   searchParams,
@@ -23,15 +24,7 @@ export default async function ResetPasswordPage({
           <label htmlFor="password" className="mb-1 block text-sm font-medium text-ink">
             New password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
-          />
+          <PasswordInput id="password" name="password" required minLength={8} autoComplete="new-password" />
         </div>
         <div>
           <label
@@ -40,15 +33,7 @@ export default async function ResetPasswordPage({
           >
             Confirm new password
           </label>
-          <input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
-          />
+          <PasswordInput id="confirmPassword" name="confirmPassword" required minLength={8} autoComplete="new-password" />
         </div>
         <button
           type="submit"

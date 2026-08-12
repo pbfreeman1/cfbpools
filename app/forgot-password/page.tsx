@@ -37,7 +37,7 @@ export default async function ForgotPasswordPage({
             type="email"
             required
             autoComplete="email"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+            className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
         </div>
         <button

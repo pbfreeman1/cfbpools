@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { signUp } from "@/app/actions/auth";
+import PasswordInput from "@/app/components/PasswordInput";
+import ConfirmEmailInput from "@/app/components/ConfirmEmailInput";
 
 export default async function SignupPage({
   searchParams,
@@ -33,7 +35,7 @@ export default async function SignupPage({
               type="text"
               required
               autoComplete="given-name"
-              className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+              className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
             />
           </div>
           <div>
@@ -46,7 +48,7 @@ export default async function SignupPage({
               type="text"
               required
               autoComplete="family-name"
-              className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+              className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
             />
           </div>
         </div>
@@ -61,7 +63,7 @@ export default async function SignupPage({
             required
             autoComplete="tel"
             placeholder="(555) 555-5555"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+            className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
         </div>
         <div>
@@ -74,37 +76,28 @@ export default async function SignupPage({
             type="email"
             required
             autoComplete="email"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+            className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
+        </div>
+        <div>
+          <label htmlFor="confirmEmail" className="mb-1 block text-sm font-medium text-ink">
+            Confirm email
+          </label>
+          <ConfirmEmailInput id="confirmEmail" name="confirmEmail" />
+          <p className="mt-1 text-xs text-muted">Retype it — pasting is disabled here so a typo doesn&apos;t slip through both fields.</p>
         </div>
         <div>
           <label htmlFor="password" className="mb-1 block text-sm font-medium text-ink">
             Password
           </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
-          />
+          <PasswordInput id="password" name="password" required minLength={8} autoComplete="new-password" />
           <p className="mt-1 text-xs text-muted">At least 8 characters.</p>
         </div>
         <div>
           <label htmlFor="confirmPassword" className="mb-1 block text-sm font-medium text-ink">
             Confirm password
           </label>
-          <input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
-          />
+          <PasswordInput id="confirmPassword" name="confirmPassword" required minLength={8} autoComplete="new-password" />
         </div>
         <button
           type="submit"
