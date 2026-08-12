@@ -5,14 +5,29 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Placeholder brand palette — swap for your SEC Survivor / CFBPools colors
-        brand: {
-          50: "#f2f7fb",
-          100: "#e0edf7",
-          500: "#1e5f9c",
-          600: "#164a7c",
-          700: "#0f3760",
+        // Broadcast-desk dark theme. `app` = page background, `surface` =
+        // cards/panels, `edge` = borders. `gold` is the single accent color
+        // (CTAs, headlines, live indicators) — team-specific colors are
+        // applied separately, inline, from real data (master_teams.primary_color).
+        app: "#0B1220",
+        surface: "#141B2E",
+        "surface-hover": "#1B2440",
+        edge: "#232B45",
+        ink: "#E7EAF0",
+        muted: "#8B93A7",
+        gold: {
+          300: "#F9D48A",
+          400: "#F7C665",
+          500: "#F5B942",
+          600: "#D99A26",
         },
+        alive: "#22C55E",
+        dead: "#EF4444",
+      },
+      fontFamily: {
+        display: ["var(--font-display)", "sans-serif"],
+        body: ["var(--font-body)", "sans-serif"],
+        data: ["var(--font-data)", "monospace"],
       },
     },
   },

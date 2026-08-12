@@ -7,11 +7,28 @@ html {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-app text-ink antialiased;
+  font-family: var(--font-body), sans-serif;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), sans-serif;
 }
 
 /* Comfortable tap targets for mobile-first pick UI */
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide scrollbar on the horizontal matchup strip while staying scrollable */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

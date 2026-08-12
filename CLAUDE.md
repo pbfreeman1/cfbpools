@@ -15,6 +15,24 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 - RLS policies are mandatory on every user-data table — write them alongside the schema, not after.
 - Primary data source: CFBD API (collegefootballdata.com) for schedules/results/spreads. ESPN's public endpoints are a live-score fallback only, not primary — they're unofficial and unreliable for spreads.
 
+## Auth routes (built)
+- `/signup`, `/login`, `/forgot-password`, `/reset-password`, `/signup/check-email`, `/dashboard` (protected)
+- `/auth/confirm` — route handler that verifies both signup-confirmation and password-reset links via `verifyOtp`
+- `app/actions/auth.ts` — all auth server actions (signUp, signIn, signOut, requestPasswordReset, updatePassword)
+- `middleware.ts` + `lib/supabase/middleware.ts` — required session refresh, do not remove
+
+**Required manual Supabase Dashboard config (not doable via migration):**
+- Authentication → Email Templates → "Confirm signup": change link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
+- Authentication → Email Templates → "Reset Password": change link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password`
+- Authentication → URL Configuration → Site URL: set to the real deployed URL (not localhost) once live
+- Authentication → URL Configuration → Redirect URLs: add `http://localhost:3000/**` and the production URL `/**`
+
+## Email
+- `lib/email.ts` — `sendEmail()` wraps Resend's API via plain `fetch`, no SDK dependency. It never throws — missing env vars or a failed send just log and continue, so email can never break the action it's attached to.
+- Required env vars: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL` (admin notifications are skipped if unset).
+- Triggers: account signup → admin notification. Survivor entry created → user welcome/instructions email + admin notification. Pick saved/changed → user confirmation email.
+- Resend requires domain verification (SPF/DKIM) before sending to arbitrary recipients — see Section 3 of the roadmap doc.
+
 ## Branches
 - `main` = production (Vercel production deploy + Supabase production).
 - `dev` = staging (Vercel preview + Supabase dev branch).
