@@ -115,7 +115,8 @@ export default async function BonusPicksPage({
       const anyEligible = weekGames.some((g) => {
         const home = g.home_team as unknown as TeamRef;
         const away = g.away_team as unknown as TeamRef;
-        const secTeamIds = [home, away].filter((t) => t.conference === "SEC").map((t) => t.id);
+        if (home.conference !== "SEC" || away.conference !== "SEC") return false;
+        const secTeamIds = [home.id, away.id];
         return (
           secTeamIds.some((id) => !usedElsewhere.has(id)) &&
           new Date(g.kickoff_time).getTime() > now
@@ -157,6 +158,7 @@ export default async function BonusPicksPage({
         { team: away, opponent: home },
       ].forEach(({ team, opponent }) => {
         if (team.conference !== "SEC") return;
+        if (opponent.conference !== "SEC") return;
         if (kickoffPassed) return;
         // A team already used by THIS week's own current pick is still a
         // valid option (it's not "elsewhere"); anything used in another

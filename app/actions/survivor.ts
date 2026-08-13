@@ -59,6 +59,7 @@ export async function createEntry(formData: FormData) {
 
     const finalEntryName = entryNameInput || `Entry ${nextEntryNumber}`;
     const firstName = profile?.first_name || "there";
+    const createdAt = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
     if (user.email) {
       await sendEmail({
@@ -73,20 +74,28 @@ export async function createEntry(formData: FormData) {
             day: "numeric",
           }),
         }),
+        stream: "welcome",
       });
     }
 
     const admin = adminEmail();
     if (admin) {
+      const { count } = await supabase
+        .from("survivor_entries")
+        .select("*", { count: "exact", head: true });
+
       await sendEmail({
         to: admin,
-        subject: "New Survivor Pool entry",
+        subject: `New Survivor entry — "${finalEntryName}" (entry #${count ?? "?"})`,
         html: adminNewEntryEmail({
           firstName,
           lastName: profile?.last_name || "",
           email: user.email || "",
           entryName: finalEntryName,
+          entryNumber: nextEntryNumber,
+          createdAt,
         }),
+        stream: "picks",
       });
     }
   } catch (err) {
@@ -105,6 +114,37 @@ export async function savePick(formData: FormData) {
   const bonusTeamId = (formData.get("bonusTeamId") as string) || null;
 
   const supabase = await createClient();
+
+  // A team is only a valid pick if its opponent that week is also SEC — the
+  // same rule the pick UI greys out with. Checked server-side since the UI
+  // only disables the button; nothing stops a direct form submission.
+  const teamIdsToValidate = isBonusWeek && bonusTeamId ? [teamId, bonusTeamId] : [teamId];
+  const { data: weekGames, error: weekGamesErr } = await supabase
+    .from("games")
+    .select(
+      `home_team_id, away_team_id,
+       home_team:master_teams!games_home_team_id_fkey(id, conference),
+       away_team:master_teams!games_away_team_id_fkey(id, conference)`
+    )
+    .eq("schedule_id", scheduleId);
+  if (weekGamesErr) {
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(weekGamesErr.message)}`);
+  }
+
+  for (const id of teamIdsToValidate) {
+    const game = (weekGames ?? []).find((g) => g.home_team_id === id || g.away_team_id === id);
+    if (!game) {
+      redirect(`/survivor/${entryId}?error=${encodeURIComponent("That team isn't playing this week")}`);
+    }
+    const home = game!.home_team as unknown as { conference: string };
+    const away = game!.away_team as unknown as { conference: string };
+    const opponent = game!.home_team_id === id ? away : home;
+    if (opponent.conference !== "SEC") {
+      redirect(
+        `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent isn't SEC this week — ineligible pick")}`
+      );
+    }
+  }
 
   const { error } = await supabase.from("survivor_picks").upsert(
     {
@@ -162,6 +202,7 @@ export async function savePick(formData: FormData) {
           isBonus: isBonusWeek,
           bonusTeamName: bonusTeam?.school_name ?? null,
         }),
+        stream: "picks",
       });
     }
   } catch (err) {

@@ -4,6 +4,7 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 
 ## Pools
 - **SEC Survivor Pool** (build first): pick 1 SEC team/week to win. Lose = eliminated. 16 SEC teams, 14 weeks, so each entry must use a "bonus pick" in exactly 2 weeks of their choosing — bonus weeks require BOTH picked teams to win, or the entry is eliminated. Max 2 entries per user. Entry deadline Sept 5, 12pm.
+  - **A pick is only valid if the SEC team's opponent that week is also SEC** — non-conference games (SEC vs. another FBS conference) don't count as pickable, even though the game itself is synced into `games` normally. This is derived at query time from `games`/`master_teams.conference`, not stored as a flag — same pattern as kickoff-lock. Enforced in two places that must stay in sync: the pick UI (`app/survivor/[entryId]/page.tsx` and `.../bonus/page.tsx`, greyed out with "Ineligible — non-conference opponent") and server-side in `savePick()` (`app/actions/survivor.ts`), which rejects the upsert outright — the UI only disables the button, so the server check is the real enforcement.
 - **Weekly Pick'em Pool** (build second, spec still evolving): pick 6 games against the spread each week. 6-0 wins the pot; pushes count as losses; unlimited entries per user; picks lock 12pm Saturday.
 
 ## Conventions
@@ -28,10 +29,14 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
 - Authentication → URL Configuration → Redirect URLs: add `http://localhost:3000/**` and the production URL `/**`
 
 ## Email
-- `lib/email.ts` — `sendEmail()` wraps Resend's API via plain `fetch`, no SDK dependency. It never throws — missing env vars or a failed send just log and continue, so email can never break the action it's attached to.
-- Required env vars: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `ADMIN_EMAIL` (admin notifications are skipped if unset).
-- Triggers: account signup → admin notification. Survivor entry created → user welcome/instructions email + admin notification. Pick saved/changed → user confirmation email.
-- Resend requires domain verification (SPF/DKIM) before sending to arbitrary recipients — see Section 3 of the roadmap doc.
+- `lib/email.ts` — `sendEmail()` wraps Resend's API via plain `fetch`, no SDK dependency. It never throws — missing env vars or a failed send just log and continue, so email can never break the action it's attached to. `sendEmailWithResult()` is the same delivery but reports success/failure, used only by the admin test-email tool.
+- Three sending streams, one Resend-verified subdomain each, selected per call via the required `stream: EmailStream` param (`"picks" | "welcome" | "updates"`):
+  - `picks` (`RESEND_FROM_PICKS`, `mail.cfbpools.com`) — pick confirmations **and** admin notifications (new account, new entry).
+  - `welcome` (`RESEND_FROM_WELCOME`) — entry welcome/confirmation emails.
+  - `updates` (`RESEND_FROM_UPDATES`, `updates.cfbpools.com`) — weekly recap / bulk announcements (not built yet).
+- Required env vars: `RESEND_API_KEY`, `RESEND_FROM_PICKS`, `RESEND_FROM_WELCOME`, `RESEND_FROM_UPDATES`, `ADMIN_EMAIL` (admin notifications are skipped if unset). There is no single shared `RESEND_FROM_EMAIL` anymore.
+- Triggers: account signup → admin notification (subject includes running registered-user count). Survivor entry created → user welcome/instructions email + admin notification (subject includes running entry count). Pick saved/changed → user confirmation email.
+- Resend requires domain verification (SPF/DKIM) before sending to arbitrary recipients — see Section 3 of the roadmap doc. `cfbpools.com` root, `mail.cfbpools.com`, and `updates.cfbpools.com` are all verified with DMARC (`p=none`) published.
 
 ## Branches
 - `main` = production (Vercel production deploy + Supabase production).
@@ -64,7 +69,12 @@ Two pools, one site. See full requirements in `/docs` (add the original requirem
     domain exactly. Resend verified domain is `mail.cfbpools.com`, NOT
     the root `cfbpools.com` (root shows "Not Started" in Resend and
     cannot send).
-- `RESEND_FROM_EMAIL` env var should match the SMTP sender above.
+- This SMTP sender is independent from the app's own Resend HTTP-API sends
+  in `lib/email.ts` (see Email section) — Supabase Auth handles
+  signup-confirmation/password-reset itself via this SMTP relay, while
+  `lib/email.ts` calls Resend's API directly with one of the three
+  `RESEND_FROM_*` addresses depending on the email's stream. There's no
+  single var these must match anymore.
 
 ## Domain / DNS
 

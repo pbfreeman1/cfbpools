@@ -154,6 +154,8 @@ export default async function SurvivorEntryPage({
               let disabledReason: string | null = null;
               if (usedInWeek !== undefined) {
                 disabledReason = `Already picked — Week ${usedInWeek}`;
+              } else if (opponent.conference !== "SEC") {
+                disabledReason = "Ineligible — non-conference opponent";
               } else if (kickoffPassed) {
                 disabledReason = "Game already started";
               }
