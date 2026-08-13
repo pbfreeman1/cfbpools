@@ -37,13 +37,27 @@ export async function signUp(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
   }
 
-  const admin = adminEmail();
-  if (admin) {
-    await sendEmail({
-      to: admin,
-      subject: "New account created",
-      html: adminNewAccountEmail({ firstName, lastName, email }),
-    });
+  // Admin notification — never allowed to block the actual signup.
+  try {
+    const admin = adminEmail();
+    if (admin) {
+      const { count } = await supabase.from("profiles").select("*", { count: "exact", head: true });
+
+      await sendEmail({
+        to: admin,
+        subject: `New signup — ${firstName} ${lastName} (user #${count ?? "?"})`,
+        html: adminNewAccountEmail({
+          firstName,
+          lastName,
+          email,
+          phone: phone || null,
+          signedUpAt: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+        }),
+        stream: "picks",
+      });
+    }
+  } catch (err) {
+    console.error("[signUp] Admin notification failed:", err);
   }
 
   redirect("/signup/check-email");

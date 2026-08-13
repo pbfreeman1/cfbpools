@@ -26,17 +26,26 @@ export default async function AdminEmailPage({
           Send Test Email
         </h2>
         <p className="mb-3 text-xs text-muted">
-          Sends via the live Resend config (RESEND_API_KEY / RESEND_FROM_EMAIL) and reports
-          whether it actually went out.
+          Sends via the live Resend config and reports whether it actually went out — pick a
+          stream to confirm that sender's DNS/SMTP setup independently.
         </p>
-        <form action={sendTestEmail} className="flex gap-2">
+        <form action={sendTestEmail} className="flex flex-wrap gap-2">
           <input
             type="email"
             name="to"
             required
             placeholder="you@example.com"
-            className="flex-1 rounded-md border border-edge bg-app px-3 py-2 text-sm text-ink placeholder:text-muted"
+            className="min-w-0 flex-1 rounded-md border border-edge bg-app px-3 py-2 text-sm text-ink placeholder:text-muted"
           />
+          <select
+            name="stream"
+            defaultValue="picks"
+            className="rounded-md border border-edge bg-app px-2 py-2 text-sm text-ink"
+          >
+            <option value="picks">picks (RESEND_FROM_PICKS)</option>
+            <option value="welcome">welcome (RESEND_FROM_WELCOME)</option>
+            <option value="updates">updates (RESEND_FROM_UPDATES)</option>
+          </select>
           <button
             type="submit"
             className="rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600"

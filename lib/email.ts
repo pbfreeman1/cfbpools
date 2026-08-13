@@ -1,12 +1,25 @@
-type EmailInput = { to: string; subject: string; html: string };
+// Three sending streams, one Resend-verified subdomain each — keeps
+// engagement/complaint metrics for transactional mail (picks, welcome)
+// separate from bulk mail (weekly recaps), and keeps admin notifications on
+// the same reputation pool as the transactional stream they ride along with.
+export type EmailStream = "picks" | "welcome" | "updates";
+
+const STREAM_ENV_VAR: Record<EmailStream, string> = {
+  picks: "RESEND_FROM_PICKS",
+  welcome: "RESEND_FROM_WELCOME",
+  updates: "RESEND_FROM_UPDATES",
+};
+
+type EmailInput = { to: string; subject: string; html: string; stream: EmailStream };
 type DeliverResult = { ok: boolean; error?: string };
 
-async function deliverEmail({ to, subject, html }: EmailInput): Promise<DeliverResult> {
+async function deliverEmail({ to, subject, html, stream }: EmailInput): Promise<DeliverResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
+  const envVar = STREAM_ENV_VAR[stream];
+  const from = process.env[envVar];
 
   if (!apiKey || !from) {
-    return { ok: false, error: "RESEND_API_KEY or RESEND_FROM_EMAIL not set" };
+    return { ok: false, error: `RESEND_API_KEY or ${envVar} not set` };
   }
 
   try {
@@ -113,18 +126,34 @@ export function pickConfirmationEmail({
   `);
 }
 
+const detailRow = (label: string, value: string) => `
+  <tr>
+    <td style="padding: 4px 12px 4px 0; color: #8B93A7; font-size: 13px; white-space: nowrap; vertical-align: top;">${label}</td>
+    <td style="padding: 4px 0; font-size: 13px; vertical-align: top;">${value}</td>
+  </tr>
+`;
+
 export function adminNewAccountEmail({
   firstName,
   lastName,
   email,
+  phone,
+  signedUpAt,
 }: {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string | null;
+  signedUpAt: string;
 }) {
   return wrapper(`
-    <h1 style="font-size: 18px; margin: 0 0 8px;">New account created</h1>
-    <p>${firstName} ${lastName} (${email}) just signed up.</p>
+    <h1 style="font-size: 18px; margin: 0 0 12px;">New account created</h1>
+    <table style="border-collapse: collapse;">
+      ${detailRow("Name", `${firstName} ${lastName}`)}
+      ${detailRow("Email", email)}
+      ${phone ? detailRow("Phone", phone) : ""}
+      ${detailRow("Signed up", signedUpAt)}
+    </table>
   `);
 }
 
@@ -133,14 +162,23 @@ export function adminNewEntryEmail({
   lastName,
   email,
   entryName,
+  entryNumber,
+  createdAt,
 }: {
   firstName: string;
   lastName: string;
   email: string;
   entryName: string;
+  entryNumber: number;
+  createdAt: string;
 }) {
   return wrapper(`
-    <h1 style="font-size: 18px; margin: 0 0 8px;">New Survivor Pool entry</h1>
-    <p>${firstName} ${lastName} (${email}) created entry "${entryName}".</p>
+    <h1 style="font-size: 18px; margin: 0 0 12px;">New Survivor Pool entry</h1>
+    <table style="border-collapse: collapse;">
+      ${detailRow("Entry", `${entryName} (#${entryNumber})`)}
+      ${detailRow("Account", `${firstName} ${lastName} (${email})`)}
+      ${detailRow("Pool", "SEC Survivor")}
+      ${detailRow("Created", createdAt)}
+    </table>
   `);
 }
