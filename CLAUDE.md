@@ -198,3 +198,48 @@ clearly in the summary.
   session (the normal `createClient()` server pattern), not a
   service-role client, or the trigger raises.
 
+## RLS policy conventions (added Session 6 — perf/hardening pass)
+
+- **Always wrap `auth.uid()` / `auth.<function>()` calls in a subquery**:
+  `(select auth.uid())` instead of bare `auth.uid()`. Same logical result,
+  but Postgres evaluates it once per query (InitPlan) instead of once per
+  row — this is Supabase's documented fix for the `auth_rls_initplan`
+  advisor warning. Applies inside policy `USING`/`WITH CHECK` expressions;
+  doesn't apply to calls already inside a `SECURITY DEFINER` helper like
+  `is_admin()`, since those run once regardless.
+- **One policy per action (SELECT/INSERT/UPDATE/DELETE), not one policy per
+  "who"**: don't stack a `_select_own` and a `_select_admin` policy — merge
+  into a single policy per action with `is_admin() OR <ownership check>` in
+  both `USING` and `WITH CHECK`. Two permissive policies covering the same
+  role+action forces Postgres to evaluate both and OR the results, which is
+  what the `multiple_permissive_policies` advisor flags. For tables where
+  only admins can write and everyone can read (`games`, `master_teams`,
+  `schedule`), don't use a `FOR ALL` admin policy alongside a `FOR SELECT`
+  open-read policy — `FOR ALL` includes SELECT and creates the same overlap.
+  Split the admin policy into explicit `FOR INSERT` / `FOR UPDATE` /
+  `FOR DELETE` policies instead, since SELECT is already covered.
+- **Never let a policy's `WITH CHECK`/`USING` subquery select from the same
+  table the policy is on, evaluated as the calling role.** This trips
+  Postgres's RLS recursion guard (`42P17: infinite recursion detected in
+  policy for relation ...`) — found in Session 6 as a **pre-existing bug**
+  in `profiles_update_own`'s self-consistency check (comparing the proposed
+  new row's `is_admin`/`email` against the caller's current row via a raw
+  `SELECT ... FROM profiles WHERE id = auth.uid()` subquery). Any non-admin
+  calling `updatePaymentInfo()` would hit this. Fixed by routing that lookup
+  through a `SECURITY DEFINER` helper (`current_profile_self()`, same
+  pattern as `is_admin()`) so the internal select bypasses RLS instead of
+  re-triggering it. If a future policy needs to compare the new row against
+  the caller's *current* stored row on the same table, always go through a
+  `SECURITY DEFINER` helper — never a raw self-referencing subquery.
+- A `SECURITY DEFINER` helper function used inside RLS policies (like
+  `is_admin()` and `current_profile_self()`) is, by default, directly
+  callable via PostgREST RPC by `anon`/`authenticated` too (flagged by the
+  security advisor as `anon_security_definer_function_executable` /
+  `authenticated_security_definer_function_executable`). This is expected
+  and accepted for these two — both only ever return data about the
+  *calling* user's own session (admin status, own `is_admin`/`email`), so
+  direct RPC exposure isn't a data leak. Don't reflexively revoke `EXECUTE`
+  to silence the warning — the policies that call these functions need
+  `EXECUTE` granted to `authenticated`/`public` or the RLS check itself
+  fails with a permission error.
+
