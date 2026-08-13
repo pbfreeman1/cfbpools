@@ -11,6 +11,26 @@ export default async function Home() {
   const { data: stats } = await supabase.from("survivor_pool_stats").select("*").single();
   const deadlinePassed = new Date() > ENTRY_DEADLINE;
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let entryCount = 0;
+  if (user) {
+    const { count } = await supabase
+      .from("survivor_entries")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id);
+    entryCount = count ?? 0;
+  }
+
+  const survivorCtaLabel =
+    entryCount >= 2
+      ? "Make This Week's Picks"
+      : entryCount === 1
+        ? "Add a Second Entry"
+        : "Enter the Survivor Pool";
+
   return (
     <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-app">
       <LogoMosaic conference="SEC" />
@@ -81,7 +101,7 @@ export default async function Home() {
                 href="/survivor"
                 className="mt-auto block rounded-lg bg-gold-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-gold-500/20 transition hover:bg-gold-600 hover:shadow-gold-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
-                Enter the Survivor Pool
+                {survivorCtaLabel}
               </Link>
             </section>
 

@@ -49,6 +49,8 @@ export async function createEntry(formData: FormData) {
     redirect(`/survivor/new?error=${encodeURIComponent(error.message)}`);
   }
 
+  const finalEntryName = entryNameInput || `Entry ${nextEntryNumber}`;
+
   // Email notifications — never allowed to block the actual entry creation.
   try {
     const { data: profile } = await supabase
@@ -57,7 +59,6 @@ export async function createEntry(formData: FormData) {
       .eq("id", user.id)
       .single();
 
-    const finalEntryName = entryNameInput || `Entry ${nextEntryNumber}`;
     const firstName = profile?.first_name || "there";
     const createdAt = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
@@ -103,7 +104,9 @@ export async function createEntry(formData: FormData) {
   }
 
   revalidatePath("/survivor");
-  redirect("/survivor");
+  redirect(
+    `/survivor?entry_created=1&entry_name=${encodeURIComponent(finalEntryName)}`
+  );
 }
 
 export async function savePick(formData: FormData) {

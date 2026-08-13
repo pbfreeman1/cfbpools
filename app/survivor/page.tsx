@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
 import { isReadableOnDark } from "@/lib/color";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
+import EntryCreatedModal from "@/app/survivor/EntryCreatedModal";
 
 type TeamRef = {
   id: string;
@@ -180,6 +182,9 @@ export default async function SurvivorHomePage({
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
+      <Suspense fallback={null}>
+        <EntryCreatedModal />
+      </Suspense>
       <Link href="/" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
         &larr; All pools
       </Link>
