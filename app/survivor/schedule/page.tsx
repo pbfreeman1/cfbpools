@@ -99,8 +99,12 @@ export default async function SchedulePage({
       <h1 className="mb-1 font-display text-3xl font-bold uppercase tracking-wide text-gold-400">
         SEC Schedule
       </h1>
-      <p className="mb-6 text-sm text-muted">
-        Every SEC team&apos;s game, week by week. Non-conference games aren&apos;t valid Survivor picks.
+      <p className="mb-2 text-sm text-muted">
+        Every SEC team&apos;s game, week by week. Games against FCS opponents aren&apos;t valid
+        Survivor picks — any other FBS opponent, conference or not, is fine.
+      </p>
+      <p className="mb-6 text-xs text-muted">
+        <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
       </p>
 
       <form action="/survivor/schedule" method="GET" className="mb-8 flex flex-wrap items-end gap-3">
@@ -168,7 +172,10 @@ export default async function SchedulePage({
                 {weekGames.map((g) => {
                   const isFinal = g.status === "final" && g.home_score !== null && g.away_score !== null;
                   const homeWon = isFinal && (g.home_score as number) > (g.away_score as number);
-                  const nonConference = g.home_team.conference !== "SEC" || g.away_team.conference !== "SEC";
+                  // Eligible against any FBS opponent — only FCS makes a
+                  // game not-pickable, unrelated to the conferenceOnly
+                  // filter above (that one means literally "both SEC").
+                  const hasFcsOpponent = g.home_team.conference === "FCS" || g.away_team.conference === "FCS";
 
                   return (
                     <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -196,9 +203,13 @@ export default async function SchedulePage({
                             {g.home_spread > 0 ? `+${g.home_spread}` : g.home_spread}
                           </span>
                         ) : null}
-                        {nonConference && (
-                          <span className="rounded bg-edge px-2 py-0.5 text-xs font-medium text-muted">
-                            Ineligible — non-conference opponent
+                        {hasFcsOpponent && (
+                          <span
+                            title="FCS opponent — not eligible this week"
+                            aria-label="FCS opponent — not eligible this week"
+                            className="rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold text-muted"
+                          >
+                            🔒 FCS
                           </span>
                         )}
                       </div>

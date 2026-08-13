@@ -83,7 +83,15 @@ export default async function BonusPicksPage({
     weekNumber: number;
     scheduleId: string;
     defaultTeamId?: string;
-    teamOptions: { id: string; school_name: string; logo_url: string | null; opponent_name: string }[];
+    teamOptions: {
+      id: string;
+      school_name: string;
+      logo_url: string | null;
+      opponent_name: string;
+      opponent_logo_url: string | null;
+      disabled: boolean;
+      ineligibleFcs: boolean;
+    }[];
   }[] = [];
 
   (weeks ?? []).forEach((week) => {
@@ -112,14 +120,19 @@ export default async function BonusPicksPage({
       });
       locked = relevant.some((g) => new Date(g.kickoff_time).getTime() <= now);
     } else {
+      // An SEC team is eligible against ANY FBS opponent — only an FCS
+      // opponent makes it ineligible. Same rule the team-options loop below
+      // uses; this just decides whether the week is worth offering at all.
       const anyEligible = weekGames.some((g) => {
         const home = g.home_team as unknown as TeamRef;
         const away = g.away_team as unknown as TeamRef;
-        if (home.conference !== "SEC" || away.conference !== "SEC") return false;
-        const secTeamIds = [home.id, away.id];
-        return (
-          secTeamIds.some((id) => !usedElsewhere.has(id)) &&
-          new Date(g.kickoff_time).getTime() > now
+        if (new Date(g.kickoff_time).getTime() <= now) return false;
+        return [
+          { team: home, opponent: away },
+          { team: away, opponent: home },
+        ].some(
+          ({ team, opponent }) =>
+            team.conference === "SEC" && opponent.conference !== "FCS" && !usedElsewhere.has(team.id)
         );
       });
       locked = !anyEligible;
@@ -148,6 +161,9 @@ export default async function BonusPicksPage({
       school_name: string;
       logo_url: string | null;
       opponent_name: string;
+      opponent_logo_url: string | null;
+      disabled: boolean;
+      ineligibleFcs: boolean;
     }[] = [];
     weekGames.forEach((g) => {
       const home = g.home_team as unknown as TeamRef;
@@ -158,23 +174,33 @@ export default async function BonusPicksPage({
         { team: away, opponent: home },
       ].forEach(({ team, opponent }) => {
         if (team.conference !== "SEC") return;
-        if (opponent.conference !== "SEC") return;
         if (kickoffPassed) return;
         // A team already used by THIS week's own current pick is still a
         // valid option (it's not "elsewhere"); anything used in another
         // week is excluded.
         if (usedElsewhere.has(team.id) && team.id !== pick?.team_id) return;
+
+        // Still shown (greyed out, badged) rather than excluded, same
+        // treatment as the main weekly pick page — a user should see
+        // "Florida vs Campbell" and why it's not pickable, not have it
+        // silently vanish.
+        const ineligibleFcs = opponent.conference === "FCS";
         teamOptions.push({
           id: team.id,
           school_name: team.school_name,
           logo_url: team.logo_url,
           opponent_name: opponent.school_name,
+          opponent_logo_url: opponent.logo_url,
+          disabled: ineligibleFcs,
+          ineligibleFcs,
         });
       });
     });
     teamOptions.sort((a, b) => a.school_name.localeCompare(b.school_name));
 
-    if (teamOptions.length === 0) return;
+    // Only worth offering if at least one option is actually pickable —
+    // a week where every visible team is FCS-ineligible is a dead end.
+    if (!teamOptions.some((t) => !t.disabled)) return;
 
     candidateWeeks.push({
       weekNumber: week.week_number,
@@ -211,6 +237,10 @@ export default async function BonusPicksPage({
       {sp.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{sp.error}</p>
       )}
+
+      <p className="mb-4 text-xs text-muted">
+        <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
+      </p>
 
       {currentBonusWeeks.length > 0 && (
         <div className="mb-8">

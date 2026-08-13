@@ -115,9 +115,10 @@ export async function savePick(formData: FormData) {
 
   const supabase = await createClient();
 
-  // A team is only a valid pick if its opponent that week is also SEC — the
-  // same rule the pick UI greys out with. Checked server-side since the UI
-  // only disables the button; nothing stops a direct form submission.
+  // A team is eligible against ANY FBS opponent (any conference) — only an
+  // FCS opponent makes it ineligible. Same rule the pick UI greys out with.
+  // Checked server-side since the UI only disables the button; nothing
+  // stops a direct form submission.
   const teamIdsToValidate = isBonusWeek && bonusTeamId ? [teamId, bonusTeamId] : [teamId];
   const { data: weekGames, error: weekGamesErr } = await supabase
     .from("games")
@@ -139,9 +140,9 @@ export async function savePick(formData: FormData) {
     const home = game!.home_team as unknown as { conference: string };
     const away = game!.away_team as unknown as { conference: string };
     const opponent = game!.home_team_id === id ? away : home;
-    if (opponent.conference !== "SEC") {
+    if (opponent.conference === "FCS") {
       redirect(
-        `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent isn't SEC this week — ineligible pick")}`
+        `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent is FCS this week — ineligible pick")}`
       );
     }
   }

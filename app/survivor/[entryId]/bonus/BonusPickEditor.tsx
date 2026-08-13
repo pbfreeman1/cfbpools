@@ -8,6 +8,9 @@ type TeamOption = {
   school_name: string;
   logo_url: string | null;
   opponent_name: string;
+  opponent_logo_url: string | null;
+  disabled: boolean;
+  ineligibleFcs: boolean;
 };
 
 export default function BonusPickEditor({
@@ -27,6 +30,60 @@ export default function BonusPickEditor({
   const [open, setOpen] = useState(false);
   const [teamA, setTeamA] = useState(defaultTeamId ?? "");
   const [teamB, setTeamB] = useState("");
+
+  function TeamGridButton({
+    team,
+    selected,
+    excluded,
+    onClick,
+  }: {
+    team: TeamOption;
+    selected: boolean;
+    /** Taken by the other slot (Team A/B) — a different reason than FCS-ineligible. */
+    excluded: boolean;
+    onClick: () => void;
+  }) {
+    const disabled = excluded || team.disabled;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={
+          "flex flex-col gap-1 rounded-md border px-2 py-2 text-left text-sm transition " +
+          (disabled
+            ? "cursor-not-allowed border-edge bg-surface-hover opacity-40"
+            : selected
+              ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+              : "border-edge text-ink hover:bg-surface")
+        }
+      >
+        <span className="flex items-center gap-2">
+          {team.logo_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
+          )}
+          <span className="truncate">{team.school_name}</span>
+          {team.ineligibleFcs && (
+            <span
+              title="FCS opponent — not eligible this week"
+              aria-label="FCS opponent — not eligible this week"
+              className="ml-auto flex-shrink-0 rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold text-muted"
+            >
+              🔒 FCS
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-1 truncate text-xs text-muted">
+          {team.opponent_logo_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.opponent_logo_url} alt="" className="h-3.5 w-3.5 flex-shrink-0 object-contain" />
+          )}
+          <span className="truncate">vs {team.opponent_name}</span>
+        </span>
+      </button>
+    );
+  }
 
   if (!open) {
     return (
@@ -66,58 +123,26 @@ export default function BonusPickEditor({
       <p className="mb-2 text-xs uppercase tracking-wide text-muted">Team A</p>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {teamOptions.map((team) => (
-          <button
+          <TeamGridButton
             key={team.id}
-            type="button"
+            team={team}
+            selected={teamA === team.id}
+            excluded={team.id === teamB}
             onClick={() => setTeamA(team.id)}
-            disabled={team.id === teamB}
-            className={
-              "flex flex-col gap-1 rounded-md border px-2 py-2 text-left text-sm transition " +
-              (team.id === teamB
-                ? "cursor-not-allowed border-edge bg-surface-hover opacity-40"
-                : teamA === team.id
-                  ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
-                  : "border-edge text-ink hover:bg-surface")
-            }
-          >
-            <span className="flex items-center gap-2">
-              {team.logo_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
-              )}
-              <span className="truncate">{team.school_name}</span>
-            </span>
-            <span className="truncate text-xs text-muted">vs {team.opponent_name}</span>
-          </button>
+          />
         ))}
       </div>
 
       <p className="mb-2 text-xs uppercase tracking-wide text-muted">Team B</p>
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {teamOptions.map((team) => (
-          <button
+          <TeamGridButton
             key={team.id}
-            type="button"
+            team={team}
+            selected={teamB === team.id}
+            excluded={team.id === teamA}
             onClick={() => setTeamB(team.id)}
-            disabled={team.id === teamA}
-            className={
-              "flex flex-col gap-1 rounded-md border px-2 py-2 text-left text-sm transition " +
-              (team.id === teamA
-                ? "cursor-not-allowed border-edge bg-surface-hover opacity-40"
-                : teamB === team.id
-                  ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
-                  : "border-edge text-ink hover:bg-surface")
-            }
-          >
-            <span className="flex items-center gap-2">
-              {team.logo_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
-              )}
-              <span className="truncate">{team.school_name}</span>
-            </span>
-            <span className="truncate text-xs text-muted">vs {team.opponent_name}</span>
-          </button>
+          />
         ))}
       </div>
 

@@ -115,6 +115,10 @@ export default async function SurvivorEntryPage({
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{sp.error}</p>
       )}
 
+      <p className="mb-4 text-xs text-muted">
+        <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
+      </p>
+
       <div className="flex flex-col gap-3">
         {(weeks ?? []).map((week) => {
           const pick = pickByWeek.get(week.id);
@@ -128,9 +132,11 @@ export default async function SurvivorEntryPage({
             school_name: string;
             logo_url: string | null;
             opponent_name: string;
+            opponent_logo_url: string | null;
             primary_color: string | null;
             disabled: boolean;
             disabledReason: string | null;
+            ineligibleFcs: boolean;
           }[] = [];
 
           weekGames.forEach((g) => {
@@ -151,11 +157,13 @@ export default async function SurvivorEntryPage({
                   ? usedWeekByTeamId.get(team.id)
                   : undefined;
 
+              // An SEC team is eligible against ANY FBS opponent (any
+              // conference) — only an FCS opponent makes it ineligible.
+              const ineligibleFcs = opponent.conference === "FCS";
+
               let disabledReason: string | null = null;
               if (usedInWeek !== undefined) {
                 disabledReason = `Already picked — Week ${usedInWeek}`;
-              } else if (opponent.conference !== "SEC") {
-                disabledReason = "Ineligible — non-conference opponent";
               } else if (kickoffPassed) {
                 disabledReason = "Game already started";
               }
@@ -165,9 +173,11 @@ export default async function SurvivorEntryPage({
                 school_name: team.school_name,
                 logo_url: team.logo_url,
                 opponent_name: opponent.school_name,
+                opponent_logo_url: opponent.logo_url,
                 primary_color: team.primary_color,
-                disabled: disabledReason !== null,
+                disabled: disabledReason !== null || ineligibleFcs,
                 disabledReason,
+                ineligibleFcs,
               });
             });
           });

@@ -9,9 +9,11 @@ type TeamOption = {
   school_name: string;
   logo_url: string | null;
   opponent_name: string;
+  opponent_logo_url: string | null;
   primary_color: string | null;
   disabled: boolean;
   disabledReason: string | null;
+  ineligibleFcs: boolean;
 };
 
 export default function WeekPickCard({
@@ -74,9 +76,28 @@ export default function WeekPickCard({
             <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
           )}
           <span className="truncate">{team.school_name}</span>
+          {team.ineligibleFcs && (
+            <span
+              title="FCS opponent — not eligible this week"
+              aria-label="FCS opponent — not eligible this week"
+              className="ml-auto flex-shrink-0 rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold text-muted"
+            >
+              🔒 FCS
+            </span>
+          )}
         </span>
-        <span className="truncate text-xs text-muted">
-          {team.disabled ? team.disabledReason : `vs ${team.opponent_name}`}
+        <span className="flex items-center gap-1 truncate text-xs text-muted">
+          {team.disabled && !team.ineligibleFcs ? (
+            team.disabledReason
+          ) : (
+            <>
+              {team.opponent_logo_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={team.opponent_logo_url} alt="" className="h-3.5 w-3.5 flex-shrink-0 object-contain" />
+              )}
+              <span className="truncate">vs {team.opponent_name}</span>
+            </>
+          )}
         </span>
       </button>
     );
