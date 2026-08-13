@@ -115,6 +115,17 @@ export async function savePick(formData: FormData) {
 
   const supabase = await createClient();
 
+  // Looked up once and carried through every redirect below so the page
+  // lands back on the same week's PickTool view, not whatever week it
+  // defaults to — the entry page is a single-week view now, not a stacked
+  // list, so losing this would bounce the user to a different week.
+  const { data: weekRow } = await supabase
+    .from("schedule")
+    .select("week_number")
+    .eq("id", scheduleId)
+    .single();
+  const weekParam = weekRow ? `&week=${weekRow.week_number}` : "";
+
   // A team is eligible against ANY FBS opponent (any conference) — only an
   // FCS opponent makes it ineligible. Same rule the pick UI greys out with.
   // Checked server-side since the UI only disables the button; nothing
@@ -129,20 +140,20 @@ export async function savePick(formData: FormData) {
     )
     .eq("schedule_id", scheduleId);
   if (weekGamesErr) {
-    redirect(`/survivor/${entryId}?error=${encodeURIComponent(weekGamesErr.message)}`);
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(weekGamesErr.message)}${weekParam}`);
   }
 
   for (const id of teamIdsToValidate) {
     const game = (weekGames ?? []).find((g) => g.home_team_id === id || g.away_team_id === id);
     if (!game) {
-      redirect(`/survivor/${entryId}?error=${encodeURIComponent("That team isn't playing this week")}`);
+      redirect(`/survivor/${entryId}?error=${encodeURIComponent("That team isn't playing this week")}${weekParam}`);
     }
     const home = game!.home_team as unknown as { conference: string };
     const away = game!.away_team as unknown as { conference: string };
     const opponent = game!.home_team_id === id ? away : home;
     if (opponent.conference === "FCS") {
       redirect(
-        `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent is FCS this week — ineligible pick")}`
+        `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent is FCS this week — ineligible pick")}${weekParam}`
       );
     }
   }
@@ -162,7 +173,7 @@ export async function savePick(formData: FormData) {
     // Trigger-raised errors (reused team, already locked, etc.) land here
     // as Postgres error messages — surfaced directly, they're already
     // written to be human-readable.
-    redirect(`/survivor/${entryId}?error=${encodeURIComponent(error.message)}`);
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(error.message)}${weekParam}`);
   }
 
   // Confirmation email — never allowed to block the actual pick save.
@@ -172,19 +183,17 @@ export async function savePick(formData: FormData) {
     } = await supabase.auth.getUser();
 
     if (user?.email) {
-      const [{ data: entry }, { data: week }, { data: team }, { data: bonusTeam }] =
-        await Promise.all([
-          supabase
-            .from("survivor_entries")
-            .select("entry_name, entry_number")
-            .eq("id", entryId)
-            .single(),
-          supabase.from("schedule").select("week_number").eq("id", scheduleId).single(),
-          supabase.from("master_teams").select("school_name").eq("id", teamId).single(),
-          isBonusWeek && bonusTeamId
-            ? supabase.from("master_teams").select("school_name").eq("id", bonusTeamId).single()
-            : Promise.resolve({ data: null }),
-        ]);
+      const [{ data: entry }, { data: team }, { data: bonusTeam }] = await Promise.all([
+        supabase
+          .from("survivor_entries")
+          .select("entry_name, entry_number")
+          .eq("id", entryId)
+          .single(),
+        supabase.from("master_teams").select("school_name").eq("id", teamId).single(),
+        isBonusWeek && bonusTeamId
+          ? supabase.from("master_teams").select("school_name").eq("id", bonusTeamId).single()
+          : Promise.resolve({ data: null }),
+      ]);
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -194,11 +203,11 @@ export async function savePick(formData: FormData) {
 
       await sendEmail({
         to: user.email,
-        subject: `Pick confirmed — Week ${week?.week_number ?? "?"}`,
+        subject: `Pick confirmed — Week ${weekRow?.week_number ?? "?"}`,
         html: pickConfirmationEmail({
           firstName: profile?.first_name || "there",
           entryName: entry?.entry_name || `Entry ${entry?.entry_number ?? ""}`,
-          weekNumber: week?.week_number ?? 0,
+          weekNumber: weekRow?.week_number ?? 0,
           teamName: team?.school_name ?? "your team",
           isBonus: isBonusWeek,
           bonusTeamName: bonusTeam?.school_name ?? null,
@@ -211,5 +220,5 @@ export async function savePick(formData: FormData) {
   }
 
   revalidatePath(`/survivor/${entryId}`);
-  redirect(`/survivor/${entryId}?saved=1`);
+  redirect(`/survivor/${entryId}?saved=1${weekParam}`);
 }

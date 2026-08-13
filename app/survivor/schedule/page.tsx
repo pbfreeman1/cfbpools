@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
-import { isReadableOnDark } from "@/lib/color";
+import { GameMatchupLine } from "@/app/components/MatchupLine";
 
 type TeamRef = {
   id: string;
@@ -23,23 +23,6 @@ type GameRow = {
   home_team: TeamRef;
   away_team: TeamRef;
 };
-
-function TeamLabel({ team, isWinner }: { team: TeamRef; isWinner: boolean }) {
-  return (
-    <span className="flex items-center gap-2">
-      {team.logo_url && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.logo_url} alt="" className="h-6 w-6 flex-shrink-0 object-contain" />
-      )}
-      <span
-        className={`text-sm ${isWinner ? "font-semibold" : "font-medium"} text-ink`}
-        style={isReadableOnDark(team.primary_color) ? { color: team.primary_color as string } : undefined}
-      >
-        {team.short_name || team.school_name}
-      </span>
-    </span>
-  );
-}
 
 export default async function SchedulePage({
   searchParams,
@@ -179,10 +162,22 @@ export default async function SchedulePage({
 
                   return (
                     <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                      <div className="flex flex-col gap-1.5">
-                        <TeamLabel team={g.home_team} isWinner={homeWon} />
-                        <TeamLabel team={g.away_team} isWinner={isFinal && !homeWon} />
-                      </div>
+                      <GameMatchupLine
+                        home={{
+                          id: g.home_team.id,
+                          name: g.home_team.short_name || g.home_team.school_name,
+                          logo_url: g.home_team.logo_url,
+                          color: g.home_team.primary_color,
+                        }}
+                        away={{
+                          id: g.away_team.id,
+                          name: g.away_team.short_name || g.away_team.school_name,
+                          logo_url: g.away_team.logo_url,
+                          color: g.away_team.primary_color,
+                        }}
+                        homeWon={homeWon}
+                        awayWon={isFinal && !homeWon}
+                      />
                       <div className="flex flex-col items-end gap-1 text-right">
                         <span className="text-xs text-muted">
                           {new Date(g.kickoff_time).toLocaleString("en-US", {

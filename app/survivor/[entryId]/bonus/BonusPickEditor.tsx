@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { savePick } from "@/app/actions/survivor";
+import { OpponentLine } from "@/app/components/MatchupLine";
 
 type TeamOption = {
   id: string;
@@ -9,6 +10,7 @@ type TeamOption = {
   logo_url: string | null;
   opponent_name: string;
   opponent_logo_url: string | null;
+  prefix: "vs" | "@";
   disabled: boolean;
   ineligibleFcs: boolean;
 };
@@ -74,13 +76,7 @@ export default function BonusPickEditor({
             </span>
           )}
         </span>
-        <span className="flex items-center gap-1 truncate text-xs text-muted">
-          {team.opponent_logo_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={team.opponent_logo_url} alt="" className="h-3.5 w-3.5 flex-shrink-0 object-contain" />
-          )}
-          <span className="truncate">vs {team.opponent_name}</span>
-        </span>
+        <OpponentLine prefix={team.prefix} opponent={{ name: team.opponent_name, logo_url: team.opponent_logo_url }} />
       </button>
     );
   }

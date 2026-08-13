@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
-import { isReadableOnDark } from "@/lib/color";
+import { GameMatchupLine } from "@/app/components/MatchupLine";
 
 export default async function MatchupStrip() {
   const supabase = await createClient();
@@ -22,13 +22,14 @@ export default async function MatchupStrip() {
     .from("games")
     .select(
       `id, kickoff_time, status, home_score, away_score,
-       home_team:master_teams!games_home_team_id_fkey(school_name, short_name, logo_url, primary_color, conference),
-       away_team:master_teams!games_away_team_id_fkey(school_name, short_name, logo_url, primary_color, conference)`
+       home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url, primary_color, conference),
+       away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url, primary_color, conference)`
     )
     .eq("schedule_id", currentWeek.id)
     .order("kickoff_time");
 
   type TeamRef = {
+    id: string;
     school_name: string;
     short_name: string | null;
     logo_url: string | null;
@@ -56,64 +57,23 @@ export default async function MatchupStrip() {
           const kickoff = new Date(g.kickoff_time);
           const isFinal = g.status === "final";
 
+          const homeWon = isFinal && g.home_score !== null && g.away_score !== null && g.home_score > g.away_score;
+          const awayWon = isFinal && g.home_score !== null && g.away_score !== null && g.away_score > g.home_score;
+
           return (
             <div
               key={g.id}
-              className="flex w-40 flex-shrink-0 flex-col gap-2 rounded-lg border border-edge bg-surface p-3"
+              className="flex w-44 flex-shrink-0 flex-col gap-2 rounded-lg border border-edge bg-surface p-3"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  {away.logo_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={away.logo_url} alt="" className="h-6 w-6 object-contain" />
-                  )}
-                  {away.primary_color && (
-                    <span
-                      className="h-2 w-2 flex-shrink-0 rounded-full"
-                      style={{ backgroundColor: away.primary_color }}
-                    />
-                  )}
-                  <span
-                    className="text-sm font-semibold"
-                    style={
-                      isReadableOnDark(away.primary_color)
-                        ? { color: away.primary_color as string }
-                        : undefined
-                    }
-                  >
-                    {away.short_name || away.school_name}
-                  </span>
-                </div>
-                {isFinal && <span className="font-data text-sm text-ink">{g.away_score}</span>}
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  {home.logo_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={home.logo_url} alt="" className="h-6 w-6 object-contain" />
-                  )}
-                  {home.primary_color && (
-                    <span
-                      className="h-2 w-2 flex-shrink-0 rounded-full"
-                      style={{ backgroundColor: home.primary_color }}
-                    />
-                  )}
-                  <span
-                    className="text-sm font-semibold"
-                    style={
-                      isReadableOnDark(home.primary_color)
-                        ? { color: home.primary_color as string }
-                        : undefined
-                    }
-                  >
-                    {home.short_name || home.school_name}
-                  </span>
-                </div>
-                {isFinal && <span className="font-data text-sm text-ink">{g.home_score}</span>}
-              </div>
+              <GameMatchupLine
+                home={{ id: home.id, name: home.short_name || home.school_name, logo_url: home.logo_url, color: home.primary_color }}
+                away={{ id: away.id, name: away.short_name || away.school_name, logo_url: away.logo_url, color: away.primary_color }}
+                homeWon={homeWon}
+                awayWon={awayWon}
+              />
               <p className="font-data text-xs text-muted">
                 {isFinal
-                  ? "Final"
+                  ? `Final ${g.away_score}-${g.home_score}`
                   : kickoff.toLocaleString("en-US", {
                       weekday: "short",
                       hour: "numeric",

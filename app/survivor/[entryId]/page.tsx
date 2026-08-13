@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import WeekPickCard from "./WeekPickCard";
+import { getMatchupPrefix } from "@/app/components/MatchupLine";
+import PickTool, { type WeekData } from "./PickTool";
 import { SEASON } from "@/lib/season";
 
 export default async function SurvivorEntryPage({
@@ -31,7 +32,7 @@ export default async function SurvivorEntryPage({
 
   const { data: weeks } = await supabase
     .from("schedule")
-    .select("id, week_number")
+    .select("id, week_number, start_date, end_date")
     .eq("season", SEASON)
     .order("week_number");
 
@@ -77,6 +78,7 @@ export default async function SurvivorEntryPage({
   const teamNameById = new Map((pickedTeams ?? []).map((t) => [t.id, t.school_name]));
 
   const now = Date.now();
+  const eliminated = entry.status === "eliminated";
 
   type TeamRef = {
     id: string;
@@ -85,6 +87,122 @@ export default async function SurvivorEntryPage({
     conference: string;
     primary_color: string | null;
   };
+
+  const weeksData: WeekData[] = (weeks ?? []).map((week) => {
+    const pick = pickByWeek.get(week.id);
+    const weekGames = (games ?? []).filter((g) => g.schedule_id === week.id);
+
+    // Every SEC team playing this week, whether or not it's currently
+    // selectable — used-elsewhere and kicked-off teams are still shown,
+    // just greyed out with a reason, rather than disappearing.
+    const teamOptions: WeekData["teamOptions"] = [];
+
+    weekGames.forEach((g) => {
+      const home = g.home_team as unknown as TeamRef;
+      const away = g.away_team as unknown as TeamRef;
+      const kickoffPassed = new Date(g.kickoff_time).getTime() <= now;
+
+      [
+        { team: home, opponent: away },
+        { team: away, opponent: home },
+      ].forEach(({ team, opponent }) => {
+        if (team.conference !== "SEC") return;
+
+        // A team already used by THIS week's own current pick should
+        // never show as "already used" — exclude it from that check.
+        const usedInWeek =
+          team.id !== pick?.team_id && team.id !== pick?.bonus_team_id
+            ? usedWeekByTeamId.get(team.id)
+            : undefined;
+
+        // An SEC team is eligible against ANY FBS opponent (any
+        // conference) — only an FCS opponent makes it ineligible.
+        const ineligibleFcs = opponent.conference === "FCS";
+
+        let disabledReason: string | null = null;
+        if (usedInWeek !== undefined) {
+          disabledReason = `Already picked — Week ${usedInWeek}`;
+        } else if (kickoffPassed) {
+          disabledReason = "Game already started";
+        }
+
+        teamOptions.push({
+          id: team.id,
+          school_name: team.school_name,
+          logo_url: team.logo_url,
+          opponent_name: opponent.school_name,
+          opponent_logo_url: opponent.logo_url,
+          prefix: getMatchupPrefix(team.id, home.id),
+          primary_color: team.primary_color,
+          kickoff_time: g.kickoff_time ?? null,
+          disabled: disabledReason !== null || ineligibleFcs,
+          disabledReason,
+          ineligibleFcs,
+        });
+      });
+    });
+
+    // Kickoff time ascending — undetermined (null) kickoffs sort last.
+    teamOptions.sort((a, b) => {
+      if (a.kickoff_time === null && b.kickoff_time === null) return 0;
+      if (a.kickoff_time === null) return 1;
+      if (b.kickoff_time === null) return -1;
+      return new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime();
+    });
+
+    // Locked if a pick exists and either of its games has kicked off,
+    // or if no pick exists and there are no selectable teams left.
+    // An eliminated entry is always locked, regardless of kickoff state.
+    let locked: boolean;
+    if (eliminated) {
+      locked = true;
+    } else if (pick) {
+      const pickGames = weekGames.filter(
+        (g) =>
+          [
+            (g.home_team as unknown as TeamRef).id,
+            (g.away_team as unknown as TeamRef).id,
+          ].includes(pick.team_id) ||
+          (pick.bonus_team_id &&
+            [
+              (g.home_team as unknown as TeamRef).id,
+              (g.away_team as unknown as TeamRef).id,
+            ].includes(pick.bonus_team_id))
+      );
+      locked = pickGames.some((g) => new Date(g.kickoff_time).getTime() <= now);
+    } else {
+      locked = teamOptions.every((t) => t.disabled);
+    }
+
+    return {
+      weekNumber: week.week_number,
+      scheduleId: week.id,
+      startDate: week.start_date,
+      endDate: week.end_date,
+      locked,
+      currentPick: pick
+        ? {
+            team_id: pick.team_id,
+            team_name: teamNameById.get(pick.team_id) ?? "Unknown",
+            is_bonus_week: pick.is_bonus_week,
+            bonus_team_id: pick.bonus_team_id,
+            bonus_team_name: pick.bonus_team_id ? teamNameById.get(pick.bonus_team_id) ?? "Unknown" : null,
+          }
+        : null,
+      teamOptions,
+    };
+  });
+
+  // Default landing week: whichever week we're currently inside of, else
+  // the next upcoming one, else the last week of the season.
+  const today = new Date();
+  const currentWeek =
+    weeksData.find((w) => today >= new Date(w.startDate) && today <= new Date(w.endDate)) ??
+    weeksData.find((w) => new Date(w.startDate) > today) ??
+    weeksData[weeksData.length - 1];
+
+  const requestedWeek = sp.week ? weeksData.find((w) => w.weekNumber === Number(sp.week)) : undefined;
+  const initialWeekNumber = (requestedWeek ?? currentWeek)?.weekNumber ?? 1;
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
@@ -106,6 +224,12 @@ export default async function SurvivorEntryPage({
         Manage Bonus Picks
       </Link>
 
+      {eliminated && (
+        <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">
+          This entry has been eliminated and can no longer submit picks.
+        </p>
+      )}
+
       {sp.saved && (
         <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
           Pick saved.
@@ -119,117 +243,12 @@ export default async function SurvivorEntryPage({
         <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
       </p>
 
-      <div className="flex flex-col gap-3">
-        {(weeks ?? []).map((week) => {
-          const pick = pickByWeek.get(week.id);
-          const weekGames = (games ?? []).filter((g) => g.schedule_id === week.id);
-
-          // Every SEC team playing this week, whether or not it's currently
-          // selectable — used-elsewhere and kicked-off teams are still shown,
-          // just greyed out with a reason, rather than disappearing.
-          const teamOptions: {
-            id: string;
-            school_name: string;
-            logo_url: string | null;
-            opponent_name: string;
-            opponent_logo_url: string | null;
-            primary_color: string | null;
-            disabled: boolean;
-            disabledReason: string | null;
-            ineligibleFcs: boolean;
-          }[] = [];
-
-          weekGames.forEach((g) => {
-            const home = g.home_team as unknown as TeamRef;
-            const away = g.away_team as unknown as TeamRef;
-            const kickoffPassed = new Date(g.kickoff_time).getTime() <= now;
-
-            [
-              { team: home, opponent: away },
-              { team: away, opponent: home },
-            ].forEach(({ team, opponent }) => {
-              if (team.conference !== "SEC") return;
-
-              // A team already used by THIS week's own current pick should
-              // never show as "already used" — exclude it from that check.
-              const usedInWeek =
-                team.id !== pick?.team_id && team.id !== pick?.bonus_team_id
-                  ? usedWeekByTeamId.get(team.id)
-                  : undefined;
-
-              // An SEC team is eligible against ANY FBS opponent (any
-              // conference) — only an FCS opponent makes it ineligible.
-              const ineligibleFcs = opponent.conference === "FCS";
-
-              let disabledReason: string | null = null;
-              if (usedInWeek !== undefined) {
-                disabledReason = `Already picked — Week ${usedInWeek}`;
-              } else if (kickoffPassed) {
-                disabledReason = "Game already started";
-              }
-
-              teamOptions.push({
-                id: team.id,
-                school_name: team.school_name,
-                logo_url: team.logo_url,
-                opponent_name: opponent.school_name,
-                opponent_logo_url: opponent.logo_url,
-                primary_color: team.primary_color,
-                disabled: disabledReason !== null || ineligibleFcs,
-                disabledReason,
-                ineligibleFcs,
-              });
-            });
-          });
-          teamOptions.sort((a, b) => a.school_name.localeCompare(b.school_name));
-
-          // Locked if a pick exists and either of its games has kicked off,
-          // or if no pick exists and there are no selectable teams left.
-          let locked = false;
-          if (pick) {
-            const pickGames = weekGames.filter(
-              (g) =>
-                [
-                  (g.home_team as unknown as TeamRef).id,
-                  (g.away_team as unknown as TeamRef).id,
-                ].includes(pick.team_id) ||
-                (pick.bonus_team_id &&
-                  [
-                    (g.home_team as unknown as TeamRef).id,
-                    (g.away_team as unknown as TeamRef).id,
-                  ].includes(pick.bonus_team_id))
-            );
-            locked = pickGames.some((g) => new Date(g.kickoff_time).getTime() <= now);
-          } else {
-            locked = teamOptions.every((t) => t.disabled);
-          }
-
-          return (
-            <WeekPickCard
-              key={week.id}
-              entryId={entryId}
-              scheduleId={week.id}
-              weekNumber={week.week_number}
-              locked={locked}
-              currentPick={
-                pick
-                  ? {
-                      team_id: pick.team_id,
-                      team_name: teamNameById.get(pick.team_id) ?? "Unknown",
-                      is_bonus_week: pick.is_bonus_week,
-                      bonus_team_id: pick.bonus_team_id,
-                      bonus_team_name: pick.bonus_team_id
-                        ? teamNameById.get(pick.bonus_team_id) ?? "Unknown"
-                        : null,
-                    }
-                  : null
-              }
-              teamOptions={teamOptions}
-              autoOpen={sp.week === String(week.week_number)}
-            />
-          );
-        })}
-      </div>
+      <PickTool
+        entryId={entryId}
+        weeksData={weeksData}
+        initialWeekNumber={initialWeekNumber}
+        eliminated={eliminated}
+      />
     </main>
   );
 }

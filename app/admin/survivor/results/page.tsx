@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameResult } from "@/lib/survivorElimination";
 import { commitWeekResults, reinstateEntry } from "@/app/actions/admin-survivor";
+import { getMatchupPrefix } from "@/app/components/MatchupLine";
 
 type TeamRef = {
   id: string;
@@ -243,6 +244,7 @@ export default async function AdminSurvivorResultsPage({
                       {!isFinal && (
                         <input type="radio" name={`game_${g.id}`} value={g.home_team.id} className="accent-gold-500" />
                       )}
+                      <span className="text-xs text-muted">{getMatchupPrefix(g.home_team.id, g.home_team.id)}</span>
                       <TeamLabel team={g.home_team} />
                       {isFinal && homeWon && <span className="text-xs font-semibold text-alive">W</span>}
                     </label>
@@ -250,6 +252,7 @@ export default async function AdminSurvivorResultsPage({
                       {!isFinal && (
                         <input type="radio" name={`game_${g.id}`} value={g.away_team.id} className="accent-gold-500" />
                       )}
+                      <span className="text-xs text-muted">{getMatchupPrefix(g.away_team.id, g.home_team.id)}</span>
                       <TeamLabel team={g.away_team} />
                       {isFinal && !homeWon && <span className="text-xs font-semibold text-alive">W</span>}
                     </label>

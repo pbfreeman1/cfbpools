@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
+import { getMatchupPrefix } from "@/app/components/MatchupLine";
 import BonusPickEditor from "./BonusPickEditor";
 import RemoveBonusButton from "./RemoveBonusButton";
 
@@ -23,10 +24,11 @@ export default async function BonusPicksPage({
 
   const { data: entry } = await supabase
     .from("survivor_entries")
-    .select("id, entry_name, entry_number")
+    .select("id, entry_name, entry_number, status")
     .eq("id", entryId)
     .single();
   if (!entry) notFound();
+  const eliminated = entry.status === "eliminated";
 
   const { data: weeks } = await supabase
     .from("schedule")
@@ -89,6 +91,7 @@ export default async function BonusPicksPage({
       logo_url: string | null;
       opponent_name: string;
       opponent_logo_url: string | null;
+      prefix: "vs" | "@";
       disabled: boolean;
       ineligibleFcs: boolean;
     }[];
@@ -137,6 +140,8 @@ export default async function BonusPicksPage({
       });
       locked = !anyEligible;
     }
+    // An eliminated entry is always locked, regardless of kickoff state.
+    if (eliminated) locked = true;
 
     if (pick?.is_bonus_week) {
       const team = teamById.get(pick.team_id);
@@ -162,6 +167,7 @@ export default async function BonusPicksPage({
       logo_url: string | null;
       opponent_name: string;
       opponent_logo_url: string | null;
+      prefix: "vs" | "@";
       disabled: boolean;
       ineligibleFcs: boolean;
     }[] = [];
@@ -191,6 +197,7 @@ export default async function BonusPicksPage({
           logo_url: team.logo_url,
           opponent_name: opponent.school_name,
           opponent_logo_url: opponent.logo_url,
+          prefix: getMatchupPrefix(team.id, home.id),
           disabled: ineligibleFcs,
           ineligibleFcs,
         });
@@ -229,6 +236,12 @@ export default async function BonusPicksPage({
         {bonusWeeksUsed} / 2 bonus weeks used
       </p>
 
+      {eliminated && (
+        <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">
+          This entry has been eliminated and can no longer submit picks.
+        </p>
+      )}
+
       {sp.saved && (
         <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
           Bonus pick saved.
@@ -264,7 +277,7 @@ export default async function BonusPicksPage({
                   )}
                   {w.locked && (
                     <span className="rounded-full bg-edge px-2 py-0.5 text-xs font-medium text-muted">
-                      Locked
+                      {eliminated ? "Eliminated" : "Locked"}
                     </span>
                   )}
                 </div>
@@ -291,7 +304,7 @@ export default async function BonusPicksPage({
         </div>
       )}
 
-      {bonusWeeksUsed < 2 && (
+      {!eliminated && bonusWeeksUsed < 2 && (
         <div>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
             Add a bonus week
