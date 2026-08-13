@@ -1,5 +1,8 @@
 // Syncs FBS teams, the regular-season week calendar, and the full game
 // schedule from collegefootballdata.com into master_teams / schedule / games.
+// Also backfills a lightweight master_teams row (name + logo, conference:
+// "FCS") for any FCS team an SEC team actually plays, so those games aren't
+// silently dropped — see the "3a." step below.
 //
 // Does NOT sync betting spreads — those are loaded weekly by the admin closer
 // to game day, per the CFBPools workflow (spreads aren't available far in
@@ -143,9 +146,12 @@ Deno.serve(async (req) => {
 
     const { data: teamRows, error: teamErr } = await supabase
       .from("master_teams")
-      .select("id, cfbd_team_id");
+      .select("id, cfbd_team_id, conference");
     if (teamErr) throw new Error(teamErr.message);
     const cfbdIdToTeamId = new Map(teamRows.map((r) => [r.cfbd_team_id, r.id]));
+    const secCfbdIds = new Set(
+      teamRows.filter((r) => r.conference === "SEC").map((r) => r.cfbd_team_id)
+    );
 
     // 3. Games — regular season, FBS classification only. Without this filter,
     // CFBD returns games across every division (FCS, DII, etc.), which is why
@@ -161,6 +167,79 @@ Deno.serve(async (req) => {
     }
     const games = await gamesRes.json();
 
+    // 3a. An SEC team's FCS opponent has no master_teams row (only FBS teams
+    // are synced above), so without a backfill those games would silently
+    // hit the "no_home_team"/"no_away_team" skip below — even though the SEC
+    // side is very real and belongs on the schedule/pick UI, just correctly
+    // marked ineligible like any other non-conference opponent. Lightweight
+    // rows only (name + logo, conference: "FCS") — never a valid pick, so
+    // every existing `conference !== "SEC"` eligibility check already treats
+    // them as non-conference automatically, no separate handling needed.
+    const missingSecOpponentIds = new Set<number>();
+    for (const g of games) {
+      const homeKnown = cfbdIdToTeamId.has(g.homeId);
+      const awayKnown = cfbdIdToTeamId.has(g.awayId);
+      if (homeKnown && !awayKnown && secCfbdIds.has(g.homeId)) missingSecOpponentIds.add(g.awayId);
+      if (awayKnown && !homeKnown && secCfbdIds.has(g.awayId)) missingSecOpponentIds.add(g.homeId);
+    }
+
+    let fcsTeamsSynced = 0;
+    if (missingSecOpponentIds.size > 0) {
+      try {
+        const fcsTeamsRes = await fetch(`${CFBD_BASE}/teams?year=${season}&classification=fcs`, {
+          headers: cfbdHeaders(CFBD_API_KEY),
+        });
+        if (!fcsTeamsRes.ok) {
+          throw new Error(`CFBD /teams (fcs) failed: ${fcsTeamsRes.status} ${await fcsTeamsRes.text()}`);
+        }
+        const fcsTeams = await fcsTeamsRes.json();
+        const fcsTeamsById = new Map(fcsTeams.map((t: { id: number }) => [t.id, t]));
+
+        for (const cfbdId of missingSecOpponentIds) {
+          const t = fcsTeamsById.get(cfbdId) as
+            | {
+                id: number;
+                school: string;
+                abbreviation?: string;
+                mascot?: string;
+                logos?: string[];
+                color?: string;
+                alt_color?: string;
+              }
+            | undefined;
+          if (!t) continue; // not FCS either (DII/DIII/etc.) — leaves the game skipped, same as before this backfill
+
+          const { data: inserted, error } = await supabase
+            .from("master_teams")
+            .upsert(
+              {
+                cfbd_team_id: t.id,
+                school_name: t.school,
+                short_name: t.abbreviation ?? t.school,
+                mascot: t.mascot ?? null,
+                conference: "FCS",
+                logo_url: Array.isArray(t.logos) ? t.logos[0] ?? null : null,
+                primary_color: t.color ?? null,
+                secondary_color: t.alt_color ?? null,
+              },
+              { onConflict: "cfbd_team_id" }
+            )
+            .select("id")
+            .single();
+          if (error) {
+            throw new Error(`master_teams upsert failed for FCS opponent ${t.school}: ${error.message}`);
+          }
+          cfbdIdToTeamId.set(t.id, inserted.id);
+          fcsTeamsSynced++;
+        }
+      } catch (err) {
+        // Non-fatal — the affected games just stay skipped, exactly like
+        // before this backfill existed. Never let this enhancement take
+        // down the rest of the sync.
+        console.error("[cfbd-sync] FCS opponent backfill failed:", (err as Error).message);
+      }
+    }
+
     let gamesSynced = 0;
     let gamesSkipped = 0;
     let skippedNoWeek = 0;
@@ -175,6 +254,10 @@ Deno.serve(async (req) => {
 
       // Games against non-FBS opponents (FCS/DII) won't have a master_teams
       // match, since we only synced FBS teams — skip those rather than error.
+      // (SEC-vs-FCS games are the exception: 3a. above backfills those
+      // specific opponents, so they resolve here instead of hitting this
+      // skip. Anything still unresolved is either a non-SEC FCS/DII matchup
+      // or a team the FCS backfill couldn't find.)
       if (!scheduleId || !homeTeamId || !awayTeamId) {
         gamesSkipped++;
         if (!scheduleId) skippedNoWeek++;
@@ -222,6 +305,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         season,
         teamsSynced,
+        fcsTeamsSynced,
         weeksSynced,
         gamesSynced,
         gamesSkipped,
