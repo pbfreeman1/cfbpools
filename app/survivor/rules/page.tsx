@@ -30,7 +30,7 @@ export default function SurvivorRulesPage() {
             <li>Each week, pick one SEC team you think will win its game.</li>
             <li>Win → you advance to the next week. Lose → you&apos;re eliminated.</li>
             <li>
-              There are 16 SEC teams but only 14 weeks, so every entry must use a{" "}
+              There are 16 SEC teams but only 13 weeks in the regular season, so every entry must use a{" "}
               <span className="text-ink">bonus pick in exactly 2 weeks</span> of its choosing.
             </li>
             <li>
@@ -39,6 +39,10 @@ export default function SurvivorRulesPage() {
             <li>
               A team can only be used <span className="text-ink">once per entry, for the whole season</span> —
               including bonus picks.
+            </li>
+            <li>
+              You <span className="text-ink">MUST save a team to use in the SEC Championship</span> —
+              if you don't have one of the teams remaining that are participating in the SEC Championship, then you will be ELIMINATED!
             </li>
             <li>Once a game kicks off, that pick is locked and cannot be changed.</li>
             <li>You can change an unlocked pick as often as you like, including future weeks.</li>
@@ -75,7 +79,7 @@ export default function SurvivorRulesPage() {
           </h2>
           <p className="text-muted">
             The pool continues until there&apos;s one sole survivor. If multiple entries are
-            still alive at the end of the season, they split the pot.
+            still alive after the SEC Championship, then they will have the option to compete in a Bowl Season tiebreaker or split the pot. 
           </p>
         </section>
       </div>
