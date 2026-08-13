@@ -23,11 +23,35 @@ const config: Config = {
         },
         alive: "#22C55E",
         dead: "#EF4444",
+        // Second pool identity accent (Pick'em) — sits alongside `gold`
+        // (Survivor's identity color) so the two pool cards read as
+        // distinct broadcast "bugs" rather than identical grey panels.
+        pickem: {
+          300: "#A9C4FF",
+          400: "#7DA6FF",
+          500: "#4C7EFF",
+          600: "#3860D9",
+        },
       },
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
         body: ["var(--font-body)", "sans-serif"],
         data: ["var(--font-data)", "monospace"],
+      },
+      keyframes: {
+        drift: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-4%)" },
+        },
+        "drift-reverse": {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(3%)" },
+        },
+      },
+      animation: {
+        // Ambient background drift, not a ticker — long duration, gentle ease.
+        drift: "drift 70s ease-in-out infinite alternate",
+        "drift-reverse": "drift-reverse 90s ease-in-out infinite alternate",
       },
     },
   },
