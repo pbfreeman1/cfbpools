@@ -111,12 +111,17 @@ export default async function Home() {
                 </div>
                 <div className="text-right">
                   <p className="font-data text-lg font-bold leading-none text-muted sm:text-xl">
-                    Sat 12pm
+                    Unlimited Entries
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    Weekly lock
+                    
                   </p>
                 </div>
+              </div>
+              <div className="mt-5 rounded-lg border border-dashed border-pickem-500/40 bg-pickem-500/5 px-6 py-4 text-center">
+                <p className="font-display text-sm font-bold uppercase tracking-wide text-pickem-400">
+                  Opens for entries Aug 31
+                </p>
               </div>
             </section>
           </PoolCardsScroller>
