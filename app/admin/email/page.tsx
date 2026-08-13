@@ -27,7 +27,7 @@ export default async function AdminEmailPage({
         </h2>
         <p className="mb-3 text-xs text-muted">
           Sends via the live Resend config and reports whether it actually went out — pick a
-          stream to confirm that sender's DNS/SMTP setup independently.
+          stream to confirm that sender&apos;s DNS/SMTP setup independently.
         </p>
         <form action={sendTestEmail} className="flex flex-wrap gap-2">
           <input

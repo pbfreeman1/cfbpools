@@ -6,6 +6,14 @@ import { revalidatePath } from "next/cache";
 import { sendEmail, adminEmail, adminNewAccountEmail } from "@/lib/email";
 
 export async function signUp(formData: FormData) {
+  // Honeypot: real users never see or fill this field. A bot that
+  // auto-fills every input trips it — pretend success without creating
+  // an account, so the bot doesn't learn it was caught.
+  const honeypot = formData.get("website") as string;
+  if (honeypot) {
+    redirect("/signup/check-email");
+  }
+
   const email = formData.get("email") as string;
   const confirmEmail = formData.get("confirmEmail") as string;
   const password = formData.get("password") as string;

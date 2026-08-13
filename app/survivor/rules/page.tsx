@@ -42,7 +42,7 @@ export default function SurvivorRulesPage() {
             </li>
             <li>
               You <span className="text-ink">MUST save a team to use in the SEC Championship</span> —
-              if you don't have one of the teams remaining that are participating in the SEC Championship, then you will be ELIMINATED!
+              if you don&apos;t have one of the teams remaining that are participating in the SEC Championship, then you will be ELIMINATED!
             </li>
             <li>Once a game kicks off, that pick is locked and cannot be changed.</li>
             <li>You can change an unlocked pick as often as you like, including future weeks.</li>

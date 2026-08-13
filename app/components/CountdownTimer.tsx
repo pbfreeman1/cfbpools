@@ -20,13 +20,36 @@ export default function CountdownTimer({
   label: string;
 }) {
   const targetDate = new Date(target);
-  const [parts, setParts] = useState(() => getTimeParts(targetDate));
+  // Computed only after mount (client clock), so the server-rendered markup
+  // never disagrees with the client's first render and triggers a hydration
+  // mismatch warning.
+  const [parts, setParts] = useState<ReturnType<typeof getTimeParts> | undefined>(undefined);
 
   useEffect(() => {
+    setParts(getTimeParts(targetDate));
     const id = setInterval(() => setParts(getTimeParts(targetDate)), 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
+
+  if (parts === undefined) {
+    return (
+      <div className="rounded-md border border-edge bg-surface px-4 py-3 text-center">
+        <p className="mb-1 font-display text-xs uppercase tracking-wide text-muted">{label}</p>
+        <div className="flex justify-center gap-3 font-data text-2xl font-bold text-gold-400">
+          <span>
+            --<span className="text-xs text-muted">h</span>
+          </span>
+          <span>
+            --<span className="text-xs text-muted">m</span>
+          </span>
+          <span>
+            --<span className="text-xs text-muted">s</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   if (!parts) {
     return (

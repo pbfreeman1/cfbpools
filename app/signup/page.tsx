@@ -24,6 +24,13 @@ export default async function SignupPage({
       )}
 
       <form action={signUp} className="flex flex-col gap-4">
+        {/* Honeypot — invisible to real users, tabIndex/autoComplete off so
+            assistive tech skips it too. Bots that auto-fill every field trip
+            this; the server action rejects silently, no CAPTCHA needed. */}
+        <div className="absolute left-[-9999px] top-[-9999px]" aria-hidden="true">
+          <label htmlFor="website">Leave this field blank</label>
+          <input type="text" id="website" name="website" tabIndex={-1} autoComplete="off" />
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="firstName" className="mb-1 block text-sm font-medium text-ink">

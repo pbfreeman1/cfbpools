@@ -189,7 +189,7 @@ export default async function AdminSurvivorResultsPage({
             Entries to be eliminated ({eliminations.length})
           </h2>
           {eliminations.length === 0 ? (
-            <p className="mb-6 text-sm text-muted">None — no active entry's pick lost this week.</p>
+            <p className="mb-6 text-sm text-muted">None — no active entry&apos;s pick lost this week.</p>
           ) : (
             <ul className="mb-6 divide-y divide-edge rounded-lg border border-edge bg-surface">
               {eliminations.map((e) => (
@@ -204,7 +204,7 @@ export default async function AdminSurvivorResultsPage({
           {pending.length > 0 && (
             <p className="mb-6 text-xs text-muted">
               {pending.length} {pending.length === 1 ? "entry has" : "entries have"} a pick riding on
-              a game that's still undecided — left untouched until that game gets a winner.
+              a game that&apos;s still undecided — left untouched until that game gets a winner.
             </p>
           )}
 

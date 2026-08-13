@@ -77,7 +77,19 @@ clearly in the summary.
 - Feature branches → PR into `dev` → PR into `main`. Don't commit straight to `main`.
 
 ## Supabase project
-- Project ref: `jdjhfyjxtlncuuqonvxm` (region: us-east-1)
+- Live project ref: `jdjhfyjxtlncuuqonvxm` (region: us-east-1).
+- Dev branch project ref: `gwufnaosvoqxndxcstkn` — a Supabase branch off the
+  live project (created via `create_branch`, all migrations applied as of
+  creation). Created with `with_data: false`, so it mirrors schema/structure
+  only, not live rows — seed it directly if a task needs realistic data
+  rather than querying prod data into it.
+- **Branch-first migration workflow**: any schema change, RLS policy change,
+  or new migration goes to the dev branch (`gwufnaosvoqxndxcstkn`) first via
+  `apply_migration`/`execute_sql`, and gets verified working there. Only
+  then apply the same migration to the live project (`jdjhfyjxtlncuuqonvxm`)
+  as a second, separate step — "it worked on the branch" is not a reason to
+  skip the live-project step, and vice versa: never apply schema changes to
+  live without having proven them on the branch first.
 
 
 ## Production environment (critical — learned the hard way)
