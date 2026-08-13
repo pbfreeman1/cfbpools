@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { savePick } from "@/app/actions/survivor";
 import { OpponentLine } from "@/app/components/MatchupLine";
+import WeekSelectorStrip from "@/app/components/WeekSelectorStrip";
 
 type TeamOption = {
   id: string;
@@ -124,32 +125,16 @@ export default function PickTool({
 
   return (
     <div>
-      <div className="no-scrollbar -mx-6 mb-6 flex gap-2 overflow-x-auto px-6 pb-1">
-        {weeksData.map((w) => {
-          const isSelected = w.weekNumber === week.weekNumber;
-          const hasPick = Boolean(w.currentPick);
-          return (
-            <button
-              key={w.weekNumber}
-              type="button"
-              onClick={() => selectWeek(w.weekNumber)}
-              className={
-                "flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded-md border text-xs font-semibold transition " +
-                (isSelected
-                  ? "border-gold-500 bg-gold-500/10 text-gold-400"
-                  : w.locked
-                    ? "border-edge bg-app text-muted opacity-60"
-                    : "border-edge text-ink hover:bg-surface-hover")
-              }
-            >
-              <span>Wk {w.weekNumber}</span>
-              <span className="text-[10px] leading-none">
-                {hasPick ? (w.currentPick!.is_bonus_week ? "★" : "✓") : w.locked ? "✕" : ""}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <WeekSelectorStrip
+        weeks={weeksData.map((w) => ({
+          weekNumber: w.weekNumber,
+          locked: w.locked,
+          hasPick: Boolean(w.currentPick),
+          isBonusWeek: w.currentPick?.is_bonus_week ?? false,
+        }))}
+        selectedWeekNumber={week.weekNumber}
+        onSelect={selectWeek}
+      />
 
       {week.currentPick?.is_bonus_week ? (
         <div className="rounded-md border border-gold-500 bg-gold-500/5 px-4 py-3">

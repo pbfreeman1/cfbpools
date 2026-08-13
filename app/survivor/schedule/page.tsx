@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
 import { GameMatchupLine } from "@/app/components/MatchupLine";
+import WeekSelectorStrip from "@/app/components/WeekSelectorStrip";
 
 type TeamRef = {
   id: string;
@@ -27,7 +28,7 @@ type GameRow = {
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ team?: string; conferenceOnly?: string }>;
+  searchParams: Promise<{ team?: string; conferenceOnly?: string; entry?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -36,6 +37,47 @@ export default async function SchedulePage({
     supabase.from("schedule").select("id, week_number, start_date, end_date").eq("season", SEASON).order("week_number"),
     supabase.from("master_teams").select("id, school_name").eq("conference", "SEC").order("school_name"),
   ]);
+
+  // "My picks so far" overlay — only meaningful when logged in with at least
+  // one entry. Picks are looked up per-entry (a user can have 2), selectable
+  // via ?entry=, defaulting to the first.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let myEntries: { id: string; entry_name: string | null; entry_number: number }[] = [];
+  const myPickByScheduleId = new Map<
+    string,
+    { team_id: string; bonus_team_id: string | null; is_bonus_week: boolean }
+  >();
+  let selectedEntryId: string | null = null;
+
+  if (user) {
+    const { data } = await supabase
+      .from("survivor_entries")
+      .select("id, entry_name, entry_number")
+      .eq("user_id", user.id)
+      .order("entry_number");
+    myEntries = data ?? [];
+
+    if (myEntries.length > 0) {
+      selectedEntryId =
+        params.entry && myEntries.some((e) => e.id === params.entry) ? params.entry : myEntries[0].id;
+
+      const { data: picks } = await supabase
+        .from("survivor_picks")
+        .select("schedule_id, team_id, bonus_team_id, is_bonus_week")
+        .eq("entry_id", selectedEntryId);
+
+      (picks ?? []).forEach((p) => {
+        myPickByScheduleId.set(p.schedule_id, {
+          team_id: p.team_id,
+          bonus_team_id: p.bonus_team_id,
+          is_bonus_week: p.is_bonus_week,
+        });
+      });
+    }
+  }
 
   const scheduleIds = (weeks ?? []).map((w) => w.id);
   const { data: gamesData } = scheduleIds.length
@@ -116,6 +158,24 @@ export default async function SchedulePage({
           />
           Conference games only
         </label>
+        {myEntries.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted">
+              My picks
+            </label>
+            <select
+              name="entry"
+              defaultValue={selectedEntryId ?? ""}
+              className="rounded-md border border-edge bg-app px-2 py-1.5 text-sm text-ink"
+            >
+              {myEntries.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.entry_name || `Entry ${e.entry_number}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           type="submit"
           className="rounded-md bg-gold-500 px-4 py-1.5 text-sm font-semibold text-app transition hover:bg-gold-600"
@@ -128,6 +188,20 @@ export default async function SchedulePage({
           </Link>
         )}
       </form>
+
+      {(weeks ?? []).some((w) => (gamesByWeek.get(w.id)?.length ?? 0) > 0) && (
+        <WeekSelectorStrip
+          weeks={(weeks ?? [])
+            .filter((w) => (gamesByWeek.get(w.id)?.length ?? 0) > 0)
+            .map((w) => ({
+              weekNumber: w.week_number,
+              locked: false,
+              hasPick: false,
+              isBonusWeek: false,
+              href: `#week-${w.week_number}`,
+            }))}
+        />
+      )}
 
       <div className="flex flex-col gap-6">
         {(weeks ?? []).map((week) => {
@@ -160,8 +234,22 @@ export default async function SchedulePage({
                   // filter above (that one means literally "both SEC").
                   const hasFcsOpponent = g.home_team.conference === "FCS" || g.away_team.conference === "FCS";
 
+                  const myPick = myPickByScheduleId.get(g.schedule_id);
+                  const myPickedTeamId =
+                    myPick &&
+                    (myPick.team_id === g.home_team.id || myPick.bonus_team_id === g.home_team.id
+                      ? g.home_team.id
+                      : myPick.team_id === g.away_team.id || myPick.bonus_team_id === g.away_team.id
+                        ? g.away_team.id
+                        : null);
+
                   return (
-                    <div key={g.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div
+                      key={g.id}
+                      className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${
+                        myPickedTeamId ? "bg-gold-500/5" : ""
+                      }`}
+                    >
                       <GameMatchupLine
                         home={{
                           id: g.home_team.id,
@@ -205,6 +293,11 @@ export default async function SchedulePage({
                             className="rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold text-muted"
                           >
                             🔒 FCS
+                          </span>
+                        )}
+                        {myPickedTeamId && (
+                          <span className="rounded bg-gold-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-gold-400">
+                            {myPick?.is_bonus_week ? "★ Your bonus pick" : "✓ Your pick"}
                           </span>
                         )}
                       </div>

@@ -3,15 +3,14 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
 import { getMatchupPrefix } from "@/app/components/MatchupLine";
-import BonusPickEditor from "./BonusPickEditor";
-import RemoveBonusButton from "./RemoveBonusButton";
+import BonusPickTool, { type BonusWeekData } from "./BonusPickTool";
 
 export default async function BonusPicksPage({
   params,
   searchParams,
 }: {
   params: Promise<{ entryId: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; week?: string }>;
 }) {
   const { entryId } = await params;
   const sp = await searchParams;
@@ -32,7 +31,7 @@ export default async function BonusPicksPage({
 
   const { data: weeks } = await supabase
     .from("schedule")
-    .select("id, week_number")
+    .select("id, week_number, start_date, end_date")
     .eq("season", SEASON)
     .order("week_number");
 
@@ -44,13 +43,25 @@ export default async function BonusPicksPage({
   const pickByWeek = new Map((picks ?? []).map((p) => [p.schedule_id, p]));
   const bonusWeeksUsed = (picks ?? []).filter((p) => p.is_bonus_week).length;
 
+  // Map every used team id -> the week_number it was used in, for the
+  // "Already picked in Week X" label — same season-wide reuse rule the main
+  // pick tool surfaces, just relevant here for both team slots.
+  const weekNumberBySchedule = new Map((weeks ?? []).map((w) => [w.id, w.week_number]));
+  const usedWeekByTeamId = new Map<string, number>();
+  (picks ?? []).forEach((p) => {
+    const wn = weekNumberBySchedule.get(p.schedule_id);
+    if (wn === undefined) return;
+    usedWeekByTeamId.set(p.team_id, wn);
+    if (p.bonus_team_id) usedWeekByTeamId.set(p.bonus_team_id, wn);
+  });
+
   const scheduleIds = (weeks ?? []).map((w) => w.id);
   const { data: games } = await supabase
     .from("games")
     .select(
       `id, schedule_id, kickoff_time,
-       home_team:master_teams!games_home_team_id_fkey(id, school_name, logo_url, conference),
-       away_team:master_teams!games_away_team_id_fkey(id, school_name, logo_url, conference)`
+       home_team:master_teams!games_home_team_id_fkey(id, school_name, logo_url, conference, primary_color),
+       away_team:master_teams!games_away_team_id_fkey(id, school_name, logo_url, conference, primary_color)`
     )
     .in("schedule_id", scheduleIds);
 
@@ -68,129 +79,46 @@ export default async function BonusPicksPage({
   const teamById = new Map((pickedTeams ?? []).map((t) => [t.id, t]));
 
   const now = Date.now();
-  type TeamRef = { id: string; school_name: string; logo_url: string | null; conference: string };
+  type TeamRef = {
+    id: string;
+    school_name: string;
+    logo_url: string | null;
+    conference: string;
+    primary_color: string | null;
+  };
 
-  const currentBonusWeeks: {
-    weekNumber: number;
-    scheduleId: string;
-    teamId: string;
-    teamName: string;
-    teamLogo: string | null;
-    bonusTeamName: string;
-    bonusTeamLogo: string | null;
-    locked: boolean;
-  }[] = [];
-
-  const candidateWeeks: {
-    weekNumber: number;
-    scheduleId: string;
-    defaultTeamId?: string;
-    teamOptions: {
-      id: string;
-      school_name: string;
-      logo_url: string | null;
-      opponent_name: string;
-      opponent_logo_url: string | null;
-      prefix: "vs" | "@";
-      disabled: boolean;
-      ineligibleFcs: boolean;
-    }[];
-  }[] = [];
-
-  (weeks ?? []).forEach((week) => {
+  const weeksData: BonusWeekData[] = (weeks ?? []).map((week) => {
     const pick = pickByWeek.get(week.id);
     const weekGames = (games ?? []).filter((g) => g.schedule_id === week.id);
 
-    const usedElsewhere = new Set<string>();
-    (picks ?? []).forEach((p) => {
-      if (p.schedule_id === week.id) return;
-      usedElsewhere.add(p.team_id);
-      if (p.bonus_team_id) usedElsewhere.add(p.bonus_team_id);
-    });
-
-    // Locked if there's a pick and its earliest relevant game has kicked
-    // off, or (no pick) if no eligible teams remain.
-    let locked: boolean;
-    if (pick) {
-      const relevant = weekGames.filter((g) => {
-        const ids = [
-          (g.home_team as unknown as TeamRef).id,
-          (g.away_team as unknown as TeamRef).id,
-        ];
-        return (
-          ids.includes(pick.team_id) || (pick.bonus_team_id && ids.includes(pick.bonus_team_id))
-        );
-      });
-      locked = relevant.some((g) => new Date(g.kickoff_time).getTime() <= now);
-    } else {
-      // An SEC team is eligible against ANY FBS opponent — only an FCS
-      // opponent makes it ineligible. Same rule the team-options loop below
-      // uses; this just decides whether the week is worth offering at all.
-      const anyEligible = weekGames.some((g) => {
-        const home = g.home_team as unknown as TeamRef;
-        const away = g.away_team as unknown as TeamRef;
-        if (new Date(g.kickoff_time).getTime() <= now) return false;
-        return [
-          { team: home, opponent: away },
-          { team: away, opponent: home },
-        ].some(
-          ({ team, opponent }) =>
-            team.conference === "SEC" && opponent.conference !== "FCS" && !usedElsewhere.has(team.id)
-        );
-      });
-      locked = !anyEligible;
-    }
-    // An eliminated entry is always locked, regardless of kickoff state.
-    if (eliminated) locked = true;
-
-    if (pick?.is_bonus_week) {
-      const team = teamById.get(pick.team_id);
-      const bonusTeam = pick.bonus_team_id ? teamById.get(pick.bonus_team_id) : null;
-      currentBonusWeeks.push({
-        weekNumber: week.week_number,
-        scheduleId: week.id,
-        teamId: pick.team_id,
-        teamName: team?.school_name ?? "Unknown",
-        teamLogo: team?.logo_url ?? null,
-        bonusTeamName: bonusTeam?.school_name ?? "Unknown",
-        bonusTeamLogo: bonusTeam?.logo_url ?? null,
-        locked,
-      });
-      return;
-    }
-
-    if (locked) return; // not a candidate — can't change a locked week
-
-    const teamOptions: {
-      id: string;
-      school_name: string;
-      logo_url: string | null;
-      opponent_name: string;
-      opponent_logo_url: string | null;
-      prefix: "vs" | "@";
-      disabled: boolean;
-      ineligibleFcs: boolean;
-    }[] = [];
+    const teamOptions: BonusWeekData["teamOptions"] = [];
     weekGames.forEach((g) => {
       const home = g.home_team as unknown as TeamRef;
       const away = g.away_team as unknown as TeamRef;
       const kickoffPassed = new Date(g.kickoff_time).getTime() <= now;
+
       [
         { team: home, opponent: away },
         { team: away, opponent: home },
       ].forEach(({ team, opponent }) => {
         if (team.conference !== "SEC") return;
-        if (kickoffPassed) return;
-        // A team already used by THIS week's own current pick is still a
-        // valid option (it's not "elsewhere"); anything used in another
-        // week is excluded.
-        if (usedElsewhere.has(team.id) && team.id !== pick?.team_id) return;
 
-        // Still shown (greyed out, badged) rather than excluded, same
-        // treatment as the main weekly pick page — a user should see
-        // "Florida vs Campbell" and why it's not pickable, not have it
-        // silently vanish.
+        // This week's own current pick (either slot) should never show as
+        // "already used" against itself.
+        const usedInWeek =
+          team.id !== pick?.team_id && team.id !== pick?.bonus_team_id
+            ? usedWeekByTeamId.get(team.id)
+            : undefined;
+
         const ineligibleFcs = opponent.conference === "FCS";
+
+        let disabledReason: string | null = null;
+        if (usedInWeek !== undefined) {
+          disabledReason = `Already picked — Week ${usedInWeek}`;
+        } else if (kickoffPassed) {
+          disabledReason = "Game already started";
+        }
+
         teamOptions.push({
           id: team.id,
           school_name: team.school_name,
@@ -198,24 +126,83 @@ export default async function BonusPicksPage({
           opponent_name: opponent.school_name,
           opponent_logo_url: opponent.logo_url,
           prefix: getMatchupPrefix(team.id, home.id),
-          disabled: ineligibleFcs,
+          primary_color: team.primary_color,
+          kickoff_time: g.kickoff_time ?? null,
+          disabled: disabledReason !== null || ineligibleFcs,
+          disabledReason,
           ineligibleFcs,
         });
       });
     });
-    teamOptions.sort((a, b) => a.school_name.localeCompare(b.school_name));
 
-    // Only worth offering if at least one option is actually pickable —
-    // a week where every visible team is FCS-ineligible is a dead end.
-    if (!teamOptions.some((t) => !t.disabled)) return;
+    teamOptions.sort((a, b) => {
+      if (a.kickoff_time === null && b.kickoff_time === null) return 0;
+      if (a.kickoff_time === null) return 1;
+      if (b.kickoff_time === null) return -1;
+      return new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime();
+    });
 
-    candidateWeeks.push({
+    // Same locked derivation as the main pick tool: a pick with a kicked-off
+    // game, or (no pick) no selectable teams left. Eliminated entries are
+    // always locked.
+    let locked: boolean;
+    if (eliminated) {
+      locked = true;
+    } else if (pick) {
+      const pickGames = weekGames.filter(
+        (g) =>
+          [
+            (g.home_team as unknown as TeamRef).id,
+            (g.away_team as unknown as TeamRef).id,
+          ].includes(pick.team_id) ||
+          (pick.bonus_team_id &&
+            [
+              (g.home_team as unknown as TeamRef).id,
+              (g.away_team as unknown as TeamRef).id,
+            ].includes(pick.bonus_team_id))
+      );
+      locked = pickGames.some((g) => new Date(g.kickoff_time).getTime() <= now);
+    } else {
+      locked = teamOptions.every((t) => t.disabled);
+    }
+
+    const team = pick ? teamById.get(pick.team_id) : undefined;
+    const bonusTeam = pick?.bonus_team_id ? teamById.get(pick.bonus_team_id) : undefined;
+
+    // Can this week accept a new/edited bonus pick? Either it's already a
+    // bonus week (editable up until lock), or the entry hasn't used both of
+    // its season bonus weeks yet.
+    const canOfferBonus = !locked && (Boolean(pick?.is_bonus_week) || bonusWeeksUsed < 2);
+
+    return {
       weekNumber: week.week_number,
       scheduleId: week.id,
-      defaultTeamId: pick?.team_id,
+      locked,
+      canOfferBonus,
+      currentPick: pick
+        ? {
+            team_id: pick.team_id,
+            team_name: team?.school_name ?? "Unknown",
+            team_logo: team?.logo_url ?? null,
+            is_bonus_week: pick.is_bonus_week,
+            bonus_team_id: pick.bonus_team_id,
+            bonus_team_name: pick.bonus_team_id ? bonusTeam?.school_name ?? "Unknown" : null,
+            bonus_team_logo: pick.bonus_team_id ? bonusTeam?.logo_url ?? null : null,
+          }
+        : null,
       teamOptions,
-    });
+    };
   });
+
+  const today = new Date();
+  const currentWeek =
+    (weeks ?? []).find((w) => today >= new Date(w.start_date) && today <= new Date(w.end_date)) ??
+    (weeks ?? []).find((w) => new Date(w.start_date) > today) ??
+    (weeks ?? [])[(weeks ?? []).length - 1];
+
+  const requestedWeek = sp.week ? weeksData.find((w) => w.weekNumber === Number(sp.week)) : undefined;
+  const initialWeekNumber = (requestedWeek ?? weeksData.find((w) => w.weekNumber === currentWeek?.week_number))
+    ?.weekNumber ?? 1;
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
@@ -255,78 +242,13 @@ export default async function BonusPicksPage({
         <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
       </p>
 
-      {currentBonusWeeks.length > 0 && (
-        <div className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-            Your bonus weeks
-          </h2>
-          <div className="flex flex-col gap-3">
-            {currentBonusWeeks.map((w) => (
-              <div
-                key={w.scheduleId}
-                className="rounded-md border border-gold-500 bg-gold-500/5 px-4 py-3"
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="font-semibold text-ink">Week {w.weekNumber}</span>
-                  {!w.locked && (
-                    <RemoveBonusButton
-                      entryId={entryId}
-                      scheduleId={w.scheduleId}
-                      keepTeamId={w.teamId}
-                    />
-                  )}
-                  {w.locked && (
-                    <span className="rounded-full bg-edge px-2 py-0.5 text-xs font-medium text-muted">
-                      {eliminated ? "Eliminated" : "Locked"}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-4 text-sm text-ink">
-                  <span className="flex items-center gap-1.5">
-                    {w.teamLogo && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={w.teamLogo} alt="" className="h-5 w-5 object-contain" />
-                    )}
-                    {w.teamName}
-                  </span>
-                  <span className="text-muted">+</span>
-                  <span className="flex items-center gap-1.5">
-                    {w.bonusTeamLogo && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={w.bonusTeamLogo} alt="" className="h-5 w-5 object-contain" />
-                    )}
-                    {w.bonusTeamName}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!eliminated && bonusWeeksUsed < 2 && (
-        <div>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-            Add a bonus week
-          </h2>
-          {candidateWeeks.length === 0 ? (
-            <p className="text-sm text-muted">No open weeks left to add a bonus pick.</p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {candidateWeeks.map((w) => (
-                <BonusPickEditor
-                  key={w.scheduleId}
-                  entryId={entryId}
-                  scheduleId={w.scheduleId}
-                  weekNumber={w.weekNumber}
-                  teamOptions={w.teamOptions}
-                  defaultTeamId={w.defaultTeamId}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <BonusPickTool
+        entryId={entryId}
+        weeksData={weeksData}
+        initialWeekNumber={initialWeekNumber}
+        eliminated={eliminated}
+        bonusWeeksUsed={bonusWeeksUsed}
+      />
     </main>
   );
 }
