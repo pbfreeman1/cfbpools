@@ -2,32 +2,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ENTRY_DEADLINE } from "@/lib/season";
 import CountdownTimer from "@/app/components/CountdownTimer";
-import StatTicker from "@/app/components/StatTicker";
 import LogoMosaic from "@/app/components/LogoMosaic";
-
-const HOW_IT_WORKS = [
-  {
-    title: "Sign up",
-    description: "Create a free account with your email — takes about a minute.",
-  },
-  {
-    title: "Enter a pool",
-    description: "Pick the Survivor Pool (Pick'em coming soon) and create your entry.",
-  },
-  {
-    title: "Make your picks",
-    description: "Choose your team each week before kickoff, and track your status.",
-  },
-];
 
 export default async function Home() {
   const supabase = await createClient();
 
   const { data: stats } = await supabase.from("survivor_pool_stats").select("*").single();
   const deadlinePassed = new Date() > ENTRY_DEADLINE;
-  const daysLeft = deadlinePassed
-    ? null
-    : Math.max(0, Math.ceil((ENTRY_DEADLINE.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
   return (
     <main className="mx-auto min-h-screen max-w-md px-6 py-10 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
@@ -37,25 +18,6 @@ export default async function Home() {
         </h1>
         <p className="mt-2 text-muted">2026 college football season.</p>
       </div>
-
-      {/* How it works */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {HOW_IT_WORKS.map((step, i) => (
-          <div key={step.title} className="rounded-lg border border-edge bg-surface p-4 text-center">
-            <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-gold-500 font-display text-sm font-bold text-app">
-              {i + 1}
-            </div>
-            <p className="mb-1 text-sm font-semibold text-ink">{step.title}</p>
-            <p className="text-xs text-muted">{step.description}</p>
-          </div>
-        ))}
-      </div>
-
-      <StatTicker
-        entries={stats?.total_entries ?? 0}
-        alive={stats?.active_entries ?? 0}
-        daysLeft={daysLeft}
-      />
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* SEC Survivor Pool section */}
