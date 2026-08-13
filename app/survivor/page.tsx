@@ -259,12 +259,18 @@ export default async function SurvivorHomePage({
       </p>
 
       {/* Quick actions */}
-      <div className={canCreateAnother ? "mb-8 grid grid-cols-3 gap-2" : "mb-8 grid grid-cols-2 gap-2"}>
+      <div className={canCreateAnother ? "mb-8 grid grid-cols-4 gap-2" : "mb-8 grid grid-cols-3 gap-2"}>
         <Link
           href="/survivor/locked"
           className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
         >
           View Picks
+        </Link>
+        <Link
+          href="/survivor/schedule"
+          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+        >
+          Schedule
         </Link>
         <Link
           href="/survivor/rules"
