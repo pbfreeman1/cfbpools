@@ -6,12 +6,25 @@ import { revalidatePath } from "next/cache";
 import { sendEmail, adminEmail, adminNewAccountEmail } from "@/lib/email";
 
 export async function signUp(formData: FormData) {
+  // Honeypot: real users never see or fill this field. A bot that
+  // auto-fills every input trips it — pretend success without creating
+  // an account, so the bot doesn't learn it was caught.
+  const honeypot = formData.get("website") as string;
+  if (honeypot) {
+    redirect("/signup/check-email");
+  }
+
   const email = formData.get("email") as string;
+  const confirmEmail = formData.get("confirmEmail") as string;
   const password = formData.get("password") as string;
   const confirmPassword = formData.get("confirmPassword") as string;
   const firstName = formData.get("firstName") as string;
   const lastName = formData.get("lastName") as string;
   const phone = formData.get("phone") as string;
+
+  if (email.trim().toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+    redirect(`/signup?error=${encodeURIComponent("Emails don't match")}`);
+  }
 
   if (password !== confirmPassword) {
     redirect(`/signup?error=${encodeURIComponent("Passwords don't match")}`);
@@ -32,13 +45,27 @@ export async function signUp(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
   }
 
-  const admin = adminEmail();
-  if (admin) {
-    await sendEmail({
-      to: admin,
-      subject: "New account created",
-      html: adminNewAccountEmail({ firstName, lastName, email }),
-    });
+  // Admin notification — never allowed to block the actual signup.
+  try {
+    const admin = adminEmail();
+    if (admin) {
+      const { count } = await supabase.from("profiles").select("*", { count: "exact", head: true });
+
+      await sendEmail({
+        to: admin,
+        subject: `New signup — ${firstName} ${lastName} (user #${count ?? "?"})`,
+        html: adminNewAccountEmail({
+          firstName,
+          lastName,
+          email,
+          phone: phone || null,
+          signedUpAt: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+        }),
+        stream: "picks",
+      });
+    }
+  } catch (err) {
+    console.error("[signUp] Admin notification failed:", err);
   }
 
   redirect("/signup/check-email");

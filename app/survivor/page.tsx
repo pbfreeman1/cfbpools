@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
 import { isReadableOnDark } from "@/lib/color";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
+import EntryCreatedModal from "@/app/survivor/EntryCreatedModal";
 
 type TeamRef = {
   id: string;
@@ -29,7 +31,7 @@ type CellData = {
 export default async function SurvivorHomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; bonus_saved?: string; week?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -180,6 +182,9 @@ export default async function SurvivorHomePage({
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
+      <Suspense fallback={null}>
+        <EntryCreatedModal />
+      </Suspense>
       <Link href="/" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
         &larr; All pools
       </Link>
@@ -192,6 +197,12 @@ export default async function SurvivorHomePage({
 
       {params.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{params.error}</p>
+      )}
+
+      {params.bonus_saved === "1" && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Bonus pick confirmed{params.week ? ` for Week ${params.week}` : ""}.
+        </p>
       )}
 
       {missingPickEntries.length > 0 && currentWeek && (
@@ -259,28 +270,68 @@ export default async function SurvivorHomePage({
       </p>
 
       {/* Quick actions */}
-      <div className={canCreateAnother ? "mb-8 grid grid-cols-3 gap-2" : "mb-8 grid grid-cols-2 gap-2"}>
-        <Link
-          href="/survivor/locked"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          View Picks
-        </Link>
-        <Link
-          href="/survivor/rules"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Rules
-        </Link>
-        {canCreateAnother && (
+      {user && entries.length === 0 ? (
+        <div className="mb-8">
+          {canCreateAnother ? (
+            <>
+              <p className="mb-2 text-center text-base font-semibold text-ink">
+                You don&apos;t have an entry yet — create one to start picking.
+              </p>
+              <Link
+                href="/survivor/new"
+                className="mb-3 block rounded-md bg-gold-500 px-4 py-4 text-center text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-gold-500/20 transition hover:bg-gold-600"
+              >
+                + New Entry
+              </Link>
+            </>
+          ) : (
+            <p className="mb-3 text-center text-sm text-dead">Entry deadline has passed.</p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/survivor/schedule"
+              className="rounded-md px-3 py-2 text-center text-sm font-medium text-muted underline-offset-2 transition hover:text-ink hover:underline"
+            >
+              Schedule
+            </Link>
+            <Link
+              href="/survivor/rules"
+              className="rounded-md px-3 py-2 text-center text-sm font-medium text-muted underline-offset-2 transition hover:text-ink hover:underline"
+            >
+              Rules
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className={canCreateAnother ? "mb-8 grid grid-cols-4 gap-2" : "mb-8 grid grid-cols-3 gap-2"}>
           <Link
-            href="/survivor/new"
-            className="rounded-md bg-gold-500 px-3 py-2.5 text-center text-sm font-semibold text-app transition hover:bg-gold-600"
+            href="/survivor/locked"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
           >
-            + New Entry
+            View Picks
           </Link>
-        )}
-      </div>
+          <Link
+            href="/survivor/schedule"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Schedule
+          </Link>
+          <Link
+            href="/survivor/rules"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Rules
+          </Link>
+          {canCreateAnother && (
+            <Link
+              href="/survivor/new"
+              className="rounded-md bg-gold-500 px-3 py-2.5 text-center text-sm font-semibold text-app transition hover:bg-gold-600"
+            >
+              + New Entry
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Personalized section */}
       {!user ? (
@@ -293,135 +344,148 @@ export default async function SurvivorHomePage({
             Log in
           </Link>
         </div>
-      ) : (
+      ) : entries.length === 0 ? null : (
         <>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
             Your entries
           </h2>
-          {entries.length === 0 ? (
-            <p className="mb-4 text-sm text-muted">You don&apos;t have an entry yet.</p>
-          ) : (
-            <div className="no-scrollbar -mx-6 mb-4 overflow-x-auto px-6">
-              <table className="border-separate border-spacing-1">
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 z-10 min-w-[120px] bg-app px-2 text-left text-xs font-medium uppercase tracking-wide text-muted">
-                      Entry
-                    </th>
+          {
+            // A genuinely fixed left column (outside the horizontally-scrolling
+            // week grid) rather than `position: sticky` table cells — sticky
+            // <td>/<th> is unreliable during horizontal scroll on mobile Safari.
+            // Shared header row (blank spacer + Wk labels), then each entry
+            // renders its OWN [name/status + picks] pair followed immediately
+            // by its own Bonus Pick link — a per-entry row block, rather than
+            // one shared table with all bonus links tacked on below it.
+            <div className="mb-4">
+              <div className="mb-1 flex gap-3">
+                <div className="w-[110px] flex-shrink-0" />
+                <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                  <div
+                    className="grid gap-1"
+                    style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
+                  >
                     {(weeks ?? []).map((w) => (
-                      <th
+                      <div
                         key={w.id}
-                        className="px-0.5 text-center font-data text-xs font-medium text-muted"
+                        className="flex h-5 items-center justify-center font-data text-xs font-medium text-muted"
                       >
                         Wk{w.week_number}
-                      </th>
+                      </div>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="sticky left-0 z-10 min-w-[120px] bg-app pr-3">
-                        <Link
-                          href={`/survivor/${entry.id}`}
-                          className="block whitespace-nowrap text-sm font-medium text-ink hover:text-gold-400"
-                        >
-                          {entry.entry_name || `Entry ${entry.entry_number}`}
-                        </Link>
-                        <span
-                          className={
-                            entry.status === "eliminated"
-                              ? "text-xs font-medium text-dead"
-                              : "text-xs font-medium text-alive"
-                          }
-                        >
-                          {entry.status === "eliminated" ? "Eliminated" : "Alive"}
-                        </span>
-                      </td>
-                      {(weeks ?? []).map((w) => {
-                        const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
-                        const base =
-                          "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
+                  </div>
+                </div>
+              </div>
 
-                        const bonusStyle = cell.pick?.isBonus
-                          ? {
-                              background: `linear-gradient(135deg, ${
-                                cell.pick.color || "#232B45"
-                              } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
-                            }
-                          : undefined;
+              {entries.map((entry) => (
+                <div key={entry.id} className="mb-3">
+                  <div className="flex gap-3">
+                    <div className="flex w-[110px] flex-shrink-0 flex-col justify-center px-2">
+                      <Link
+                        href={`/survivor/${entry.id}`}
+                        className="block truncate text-sm font-medium text-ink hover:text-gold-400"
+                      >
+                        {entry.entry_name || `Entry ${entry.entry_number}`}
+                      </Link>
+                      <span
+                        className={
+                          entry.status === "eliminated"
+                            ? "text-xs font-medium text-dead"
+                            : "text-xs font-medium text-alive"
+                        }
+                      >
+                        {entry.status === "eliminated" ? "Eliminated" : "Alive"}
+                      </span>
+                    </div>
 
-                        const inner = cell.pick ? (
-                          cell.pick.isBonus ? (
-                            <>
-                              {cell.pick.logoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={cell.pick.logoUrl}
-                                  alt=""
-                                  className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
-                                />
-                              )}
-                              {cell.pick.bonusLogoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={cell.pick.bonusLogoUrl}
-                                  alt=""
-                                  className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
-                                />
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {cell.pick.logoUrl && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
-                              )}
-                              {cell.pick.color && (
+                    <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                      <div
+                        className="grid gap-1"
+                        style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
+                      >
+                        {(weeks ?? []).map((w) => {
+                          const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
+                          const base =
+                            "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
+
+                          const bonusStyle = cell.pick?.isBonus
+                            ? {
+                                background: `linear-gradient(135deg, ${
+                                  cell.pick.color || "#232B45"
+                                } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
+                              }
+                            : undefined;
+
+                          const inner = cell.pick ? (
+                            cell.pick.isBonus ? (
+                              <>
+                                {cell.pick.logoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={cell.pick.logoUrl}
+                                    alt=""
+                                    className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
+                                  />
+                                )}
+                                {cell.pick.bonusLogoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={cell.pick.bonusLogoUrl}
+                                    alt=""
+                                    className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {cell.pick.logoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
+                                )}
+                                {cell.pick.color && (
+                                  <span
+                                    className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                    style={{ backgroundColor: cell.pick.color }}
+                                  />
+                                )}
                                 <span
-                                  className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                  style={{ backgroundColor: cell.pick.color }}
-                                />
-                              )}
-                              <span
-                                className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
-                                style={
-                                  !cell.locked && isReadableOnDark(cell.pick.color)
-                                    ? { color: cell.pick.color as string }
-                                    : undefined
-                                }
-                              >
-                                {cell.pick.shortName}
-                              </span>
-                            </>
-                          )
-                        ) : cell.locked ? (
-                          <span className="text-lg leading-none text-dead">&#10005;</span>
-                        ) : (
-                          <span className="text-lg leading-none text-muted">+</span>
-                        );
+                                  className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
+                                  style={
+                                    !cell.locked && isReadableOnDark(cell.pick.color)
+                                      ? { color: cell.pick.color as string }
+                                      : undefined
+                                  }
+                                >
+                                  {cell.pick.shortName}
+                                </span>
+                              </>
+                            )
+                          ) : cell.locked ? (
+                            <span className="text-lg leading-none text-dead">&#10005;</span>
+                          ) : (
+                            <span className="text-lg leading-none text-muted">+</span>
+                          );
 
-                        const title = cell.pick?.isBonus
-                          ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
-                          : undefined;
+                          const title = cell.pick?.isBonus
+                            ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
+                            : undefined;
 
-                        if (cell.locked) {
-                          return (
-                            <td key={w.id}>
+                          if (cell.locked) {
+                            return (
                               <div
+                                key={`${entry.id}-${w.id}`}
                                 title={title}
                                 style={bonusStyle}
                                 className={`${base} border-edge bg-app opacity-50`}
                               >
                                 {inner}
                               </div>
-                            </td>
-                          );
-                        }
+                            );
+                          }
 
-                        return (
-                          <td key={w.id}>
+                          return (
                             <Link
+                              key={`${entry.id}-${w.id}`}
                               href={`/survivor/${entry.id}?week=${w.week_number}`}
                               title={title}
                               style={bonusStyle}
@@ -433,18 +497,23 @@ export default async function SurvivorHomePage({
                             >
                               {inner}
                             </Link>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/survivor/entries/${entry.id}/bonus`}
+                    className="mt-1.5 flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
+                  >
+                    <span aria-hidden="true">⭐</span>
+                    Make a Bonus Pick for this entry
+                  </Link>
+                </div>
+              ))}
             </div>
-          )}
-          {deadlinePassed && entries.length === 0 && (
-            <p className="text-center text-sm text-dead">Entry deadline has passed.</p>
-          )}
+          }
         </>
       )}
     </main>

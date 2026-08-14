@@ -28,7 +28,7 @@ export default async function NewEntryPage({
             name="entryName"
             type="text"
             placeholder="e.g. The Comeback Kids"
-            className="w-full rounded-md border border-edge px-3 py-2 text-base focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
+            className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink placeholder:text-muted focus:border-gold-500 focus:outline-none focus:ring-1 focus:ring-gold-500"
           />
         </div>
         <button

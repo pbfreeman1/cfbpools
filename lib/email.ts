@@ -1,25 +1,25 @@
-/**
- * Thin wrapper around Resend's API. Deliberately never throws — a failed or
- * unconfigured email should never break the actual account/entry/pick
- * action it's attached to. Failures are logged, not surfaced to the user.
- */
-export async function sendEmail({
-  to,
-  subject,
-  html,
-}: {
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<void> {
+// Three sending streams, one Resend-verified subdomain each — keeps
+// engagement/complaint metrics for transactional mail (picks, welcome)
+// separate from bulk mail (weekly recaps), and keeps admin notifications on
+// the same reputation pool as the transactional stream they ride along with.
+export type EmailStream = "picks" | "welcome" | "updates";
+
+const STREAM_ENV_VAR: Record<EmailStream, string> = {
+  picks: "RESEND_FROM_PICKS",
+  welcome: "RESEND_FROM_WELCOME",
+  updates: "RESEND_FROM_UPDATES",
+};
+
+type EmailInput = { to: string; subject: string; html: string; stream: EmailStream };
+type DeliverResult = { ok: boolean; error?: string };
+
+async function deliverEmail({ to, subject, html, stream }: EmailInput): Promise<DeliverResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
+  const envVar = STREAM_ENV_VAR[stream];
+  const from = process.env[envVar];
 
   if (!apiKey || !from) {
-    console.warn(
-      `[email] Skipped "${subject}" to ${to} — RESEND_API_KEY or RESEND_FROM_EMAIL not set.`
-    );
-    return;
+    return { ok: false, error: `RESEND_API_KEY or ${envVar} not set` };
   }
 
   try {
@@ -33,11 +33,33 @@ export async function sendEmail({
     });
 
     if (!res.ok) {
-      console.error(`[email] Failed to send "${subject}" to ${to}: ${res.status} ${await res.text()}`);
+      return { ok: false, error: `${res.status} ${await res.text()}` };
     }
+    return { ok: true };
   } catch (err) {
-    console.error(`[email] Error sending "${subject}" to ${to}:`, err);
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/**
+ * Thin wrapper around Resend's API. Deliberately never throws — a failed or
+ * unconfigured email should never break the actual account/entry/pick
+ * action it's attached to. Failures are logged, not surfaced to the user.
+ */
+export async function sendEmail(input: EmailInput): Promise<void> {
+  const result = await deliverEmail(input);
+  if (!result.ok) {
+    console.warn(`[email] Failed to send "${input.subject}" to ${input.to}: ${result.error}`);
+  }
+}
+
+/**
+ * Same delivery as sendEmail(), but reports success/failure instead of
+ * swallowing it — for the admin test-email tool, where the whole point is
+ * knowing whether it actually went out.
+ */
+export async function sendEmailWithResult(input: EmailInput): Promise<DeliverResult> {
+  return deliverEmail(input);
 }
 
 /** Where admin notifications go — unset means those emails are skipped. */
@@ -104,18 +126,59 @@ export function pickConfirmationEmail({
   `);
 }
 
+export function bonusPickConfirmationEmail({
+  firstName,
+  entryName,
+  weekNumber,
+  teamAName,
+  teamBName,
+}: {
+  firstName: string;
+  entryName: string;
+  weekNumber: number;
+  teamAName: string;
+  teamBName: string;
+}) {
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">Bonus pick confirmed — Week ${weekNumber}</h1>
+    <p>Hi ${firstName},</p>
+    <p>Your bonus pick for <strong>${entryName}</strong> is confirmed:</p>
+    <p style="font-size: 18px; font-weight: 600; margin: 16px 0;">
+      ${teamAName} + ${teamBName}
+    </p>
+    <p>Both teams must win this week for this entry to advance. You can change this anytime before either game kicks off.</p>
+    <p><a href="https://cfbpools.com/survivor" style="color: #D99A26;">View your entries &rarr;</a></p>
+  `);
+}
+
+const detailRow = (label: string, value: string) => `
+  <tr>
+    <td style="padding: 4px 12px 4px 0; color: #8B93A7; font-size: 13px; white-space: nowrap; vertical-align: top;">${label}</td>
+    <td style="padding: 4px 0; font-size: 13px; vertical-align: top;">${value}</td>
+  </tr>
+`;
+
 export function adminNewAccountEmail({
   firstName,
   lastName,
   email,
+  phone,
+  signedUpAt,
 }: {
   firstName: string;
   lastName: string;
   email: string;
+  phone: string | null;
+  signedUpAt: string;
 }) {
   return wrapper(`
-    <h1 style="font-size: 18px; margin: 0 0 8px;">New account created</h1>
-    <p>${firstName} ${lastName} (${email}) just signed up.</p>
+    <h1 style="font-size: 18px; margin: 0 0 12px;">New account created</h1>
+    <table style="border-collapse: collapse;">
+      ${detailRow("Name", `${firstName} ${lastName}`)}
+      ${detailRow("Email", email)}
+      ${phone ? detailRow("Phone", phone) : ""}
+      ${detailRow("Signed up", signedUpAt)}
+    </table>
   `);
 }
 
@@ -124,14 +187,23 @@ export function adminNewEntryEmail({
   lastName,
   email,
   entryName,
+  entryNumber,
+  createdAt,
 }: {
   firstName: string;
   lastName: string;
   email: string;
   entryName: string;
+  entryNumber: number;
+  createdAt: string;
 }) {
   return wrapper(`
-    <h1 style="font-size: 18px; margin: 0 0 8px;">New Survivor Pool entry</h1>
-    <p>${firstName} ${lastName} (${email}) created entry "${entryName}".</p>
+    <h1 style="font-size: 18px; margin: 0 0 12px;">New Survivor Pool entry</h1>
+    <table style="border-collapse: collapse;">
+      ${detailRow("Entry", `${entryName} (#${entryNumber})`)}
+      ${detailRow("Account", `${firstName} ${lastName} (${email})`)}
+      ${detailRow("Pool", "SEC Survivor")}
+      ${detailRow("Created", createdAt)}
+    </table>
   `);
 }
