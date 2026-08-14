@@ -161,7 +161,17 @@ export default async function BonusTeamSelectPage({
     return new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime();
   });
 
-  const hasExistingRegularPick = (picks ?? []).some((p) => p.schedule_id === scheduleRow.id);
+  // The entry's existing pick for THIS week, if any — always a plain
+  // regular pick here, never a bonus pick (the redirect above already sent
+  // the user back to the selector if this week already has a bonus pick).
+  // Its name/logo come straight out of teamOptions rather than a second
+  // query, since a validly-picked team must already be one of this week's
+  // SEC options, and usedWeekByTeamId deliberately excludes this week's
+  // own pick from the "already used" flags, so it's never disabled here.
+  const currentWeekPick = (picks ?? []).find((p) => p.schedule_id === scheduleRow.id) ?? null;
+  const existingRegularTeam = currentWeekPick
+    ? (teamOptions.find((t) => t.id === currentWeekPick.team_id) ?? null)
+    : null;
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl">
@@ -175,18 +185,13 @@ export default async function BonusTeamSelectPage({
         Week {weekNumber} Bonus Pick
       </h1>
       <p className="mb-4 text-sm text-muted">
-        {entry.entry_name || `Entry ${entry.entry_number}`} &middot; pick two teams. Both must
-        win for this entry to advance.
+        {entry.entry_name || `Entry ${entry.entry_number}`} &middot; a bonus week needs two
+        teams — your Week {weekNumber} regular pick, plus one more. Both must win for this
+        entry to advance.
       </p>
 
       {sp.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{sp.error}</p>
-      )}
-
-      {hasExistingRegularPick && (
-        <p className="mb-4 rounded-md border border-edge bg-surface px-3 py-2 text-xs text-muted">
-          This will replace your existing Week {weekNumber} pick with this bonus pair.
-        </p>
       )}
 
       <p className="mb-4 text-xs text-muted">
@@ -196,7 +201,13 @@ export default async function BonusTeamSelectPage({
       {teamOptions.length === 0 ? (
         <p className="text-sm text-muted">No SEC games scheduled this week.</p>
       ) : (
-        <BonusTeamSelect entryId={entryId} scheduleId={scheduleRow.id} weekNumber={weekNumber} teamOptions={teamOptions} />
+        <BonusTeamSelect
+          entryId={entryId}
+          scheduleId={scheduleRow.id}
+          weekNumber={weekNumber}
+          teamOptions={teamOptions}
+          existingRegularTeamId={existingRegularTeam?.id ?? null}
+        />
       )}
     </main>
   );

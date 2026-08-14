@@ -26,7 +26,7 @@ function TeamSlotButton({
 }: {
   team: TeamOption;
   selected: boolean;
-  excludedBy: "A" | "B" | null;
+  excludedBy: "Regular Pick" | "Bonus Pick" | null;
   onClick: () => void;
 }) {
   const disabled = team.disabled || excludedBy !== null;
@@ -66,7 +66,7 @@ function TeamSlotButton({
         )}
       </span>
       {excludedBy ? (
-        <span className="truncate text-xs text-muted">Selected as Team {excludedBy}</span>
+        <span className="truncate text-xs text-muted">Selected as your {excludedBy}</span>
       ) : team.disabled && !team.ineligibleFcs ? (
         <span className="truncate text-xs text-muted">{team.disabledReason}</span>
       ) : (
@@ -79,59 +79,113 @@ function TeamSlotButton({
   );
 }
 
+function TeamReadOnlyCard({ team }: { team: TeamOption }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2.5">
+      {team.logo_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={team.logo_url} alt="" className="h-7 w-7 flex-shrink-0 object-contain" />
+      )}
+      <span className="text-sm font-semibold text-ink">{team.school_name}</span>
+    </div>
+  );
+}
+
 export default function BonusTeamSelect({
   entryId,
   scheduleId,
   weekNumber,
   teamOptions,
+  existingRegularTeamId,
 }: {
   entryId: string;
   scheduleId: string;
   weekNumber: number;
   teamOptions: TeamOption[];
+  existingRegularTeamId: string | null;
 }) {
-  const [teamA, setTeamA] = useState("");
-  const [teamB, setTeamB] = useState("");
+  const [regularTeamId, setRegularTeamId] = useState(existingRegularTeamId ?? "");
+  const [editingRegular, setEditingRegular] = useState(!existingRegularTeamId);
+  const [bonusTeamId, setBonusTeamId] = useState("");
 
-  const bothSelected = Boolean(teamA && teamB);
-  const chosenA = teamOptions.find((t) => t.id === teamA);
-  const chosenB = teamOptions.find((t) => t.id === teamB);
+  const existingRegularTeam = existingRegularTeamId
+    ? (teamOptions.find((t) => t.id === existingRegularTeamId) ?? null)
+    : null;
+  const bothSelected = Boolean(regularTeamId && bonusTeamId);
+  const chosenRegular = teamOptions.find((t) => t.id === regularTeamId);
+  const chosenBonus = teamOptions.find((t) => t.id === bonusTeamId);
+  const regularIsChanging = existingRegularTeamId !== null && regularTeamId !== existingRegularTeamId;
 
   return (
-    <form
-      action={saveBonusPick}
-      className={bothSelected ? "pb-24" : ""}
-    >
+    <form action={saveBonusPick} className={bothSelected ? "pb-32" : ""}>
       <input type="hidden" name="entryId" value={entryId} />
       <input type="hidden" name="scheduleId" value={scheduleId} />
       <input type="hidden" name="weekNumber" value={weekNumber} />
-      <input type="hidden" name="teamAId" value={teamA} />
-      <input type="hidden" name="teamBId" value={teamB} />
+      <input type="hidden" name="teamAId" value={regularTeamId} />
+      <input type="hidden" name="teamBId" value={bonusTeamId} />
 
-      <p className="mb-2 text-xs uppercase tracking-wide text-muted">Team A</p>
-      <div className="mb-4 flex flex-col gap-2">
-        {teamOptions.map((team) => (
-          <TeamSlotButton
-            key={team.id}
-            team={team}
-            selected={teamA === team.id}
-            excludedBy={team.id === teamB ? "B" : null}
-            onClick={() => setTeamA(team.id === teamA ? "" : team.id)}
-          />
-        ))}
+      <div className="mb-5 rounded-md border border-edge bg-surface p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Regular Pick</p>
+          <p className="text-xs text-muted">Week {weekNumber}</p>
+        </div>
+
+        {!editingRegular && existingRegularTeam ? (
+          <>
+            <TeamReadOnlyCard team={existingRegularTeam} />
+            <button
+              type="button"
+              onClick={() => setEditingRegular(true)}
+              className="mt-2 text-xs font-medium text-gold-400 hover:underline"
+            >
+              Change regular pick
+            </button>
+          </>
+        ) : (
+          <>
+            {existingRegularTeamId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingRegular(false);
+                  setRegularTeamId(existingRegularTeamId);
+                }}
+                className="mb-2 text-xs font-medium text-muted hover:underline"
+              >
+                &larr; Keep current pick
+              </button>
+            )}
+            <div className="flex flex-col gap-2">
+              {teamOptions.map((team) => (
+                <TeamSlotButton
+                  key={team.id}
+                  team={team}
+                  selected={regularTeamId === team.id}
+                  excludedBy={team.id === bonusTeamId ? "Bonus Pick" : null}
+                  onClick={() => setRegularTeamId(team.id === regularTeamId ? "" : team.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      <p className="mb-2 text-xs uppercase tracking-wide text-muted">Team B</p>
-      <div className="mb-3 flex flex-col gap-2">
-        {teamOptions.map((team) => (
-          <TeamSlotButton
-            key={team.id}
-            team={team}
-            selected={teamB === team.id}
-            excludedBy={team.id === teamA ? "A" : null}
-            onClick={() => setTeamB(team.id === teamB ? "" : team.id)}
-          />
-        ))}
+      <div className="mb-3 rounded-md border-2 border-gold-500 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gold-400">Bonus Pick</p>
+          <p className="text-xs text-muted">Week {weekNumber}</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          {teamOptions.map((team) => (
+            <TeamSlotButton
+              key={team.id}
+              team={team}
+              selected={bonusTeamId === team.id}
+              excludedBy={team.id === regularTeamId ? "Regular Pick" : null}
+              onClick={() => setBonusTeamId(team.id === bonusTeamId ? "" : team.id)}
+            />
+          ))}
+        </div>
       </div>
 
       <p className="mb-3 text-xs text-muted">Both teams must win for this entry to advance.</p>
@@ -148,30 +202,57 @@ export default function BonusTeamSelect({
 
       {bothSelected && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-surface px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.25)]">
-          <div className="mx-auto flex max-w-sm items-center gap-3 sm:max-w-xl">
-            <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-ink">
-              <span className="flex min-w-0 items-center gap-1.5">
-                {chosenA?.logo_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={chosenA.logo_url} alt="" className="h-7 w-7 flex-shrink-0 object-contain" />
-                )}
-                <span className="truncate">{chosenA?.school_name}</span>
-              </span>
-              <span className="text-muted">+</span>
-              <span className="flex min-w-0 items-center gap-1.5">
-                {chosenB?.logo_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={chosenB.logo_url} alt="" className="h-7 w-7 flex-shrink-0 object-contain" />
-                )}
-                <span className="truncate">{chosenB?.school_name}</span>
-              </span>
+          <div className="mx-auto flex max-w-sm flex-col gap-2 sm:max-w-xl">
+            {regularIsChanging ? (
+              <p className="text-xs text-gold-400">
+                This will update your Week {weekNumber} regular pick to {chosenRegular?.school_name}
+                {existingRegularTeam ? ` (was ${existingRegularTeam.school_name})` : ""} and add{" "}
+                {chosenBonus?.school_name} as your bonus pick.
+              </p>
+            ) : existingRegularTeamId ? (
+              <p className="text-xs text-muted">
+                Keeping {chosenRegular?.school_name} as your Week {weekNumber} pick, adding{" "}
+                {chosenBonus?.school_name} as your bonus pick.
+              </p>
+            ) : (
+              <p className="text-xs text-muted">
+                This will set {chosenRegular?.school_name} as your Week {weekNumber} pick and add{" "}
+                {chosenBonus?.school_name} as your bonus pick.
+              </p>
+            )}
+            <div className="flex items-center gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3 text-sm font-semibold text-ink">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {chosenRegular?.logo_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={chosenRegular.logo_url}
+                      alt=""
+                      className="h-7 w-7 flex-shrink-0 object-contain"
+                    />
+                  )}
+                  <span className="truncate">{chosenRegular?.school_name}</span>
+                </span>
+                <span className="text-muted">+</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {chosenBonus?.logo_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={chosenBonus.logo_url}
+                      alt=""
+                      className="h-7 w-7 flex-shrink-0 object-contain"
+                    />
+                  )}
+                  <span className="truncate">{chosenBonus?.school_name}</span>
+                </span>
+              </div>
+              <button
+                type="submit"
+                className="flex-shrink-0 rounded-md bg-gold-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-gold-600"
+              >
+                Confirm Pick
+              </button>
             </div>
-            <button
-              type="submit"
-              className="flex-shrink-0 rounded-md bg-gold-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-gold-600"
-            >
-              Confirm Pick
-            </button>
           </div>
         </div>
       )}

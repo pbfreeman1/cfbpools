@@ -353,159 +353,167 @@ export default async function SurvivorHomePage({
             // A genuinely fixed left column (outside the horizontally-scrolling
             // week grid) rather than `position: sticky` table cells — sticky
             // <td>/<th> is unreliable during horizontal scroll on mobile Safari.
-            <div className="mb-4 flex gap-3">
-              <div className="flex w-[110px] flex-shrink-0 flex-col gap-1">
-                <div className="flex h-5 items-center px-2 text-xs font-medium uppercase tracking-wide text-muted">
-                  Entry
-                </div>
-                {entries.map((entry) => (
-                  <div key={entry.id} className="flex h-14 flex-col justify-center px-2">
-                    <Link
-                      href={`/survivor/${entry.id}`}
-                      className="block truncate text-sm font-medium text-ink hover:text-gold-400"
-                    >
-                      {entry.entry_name || `Entry ${entry.entry_number}`}
-                    </Link>
-                    <span
-                      className={
-                        entry.status === "eliminated"
-                          ? "text-xs font-medium text-dead"
-                          : "text-xs font-medium text-alive"
-                      }
-                    >
-                      {entry.status === "eliminated" ? "Eliminated" : "Alive"}
-                    </span>
+            // Shared header row (blank spacer + Wk labels), then each entry
+            // renders its OWN [name/status + picks] pair followed immediately
+            // by its own Bonus Pick link — a per-entry row block, rather than
+            // one shared table with all bonus links tacked on below it.
+            <div className="mb-4">
+              <div className="mb-1 flex gap-3">
+                <div className="w-[110px] flex-shrink-0" />
+                <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                  <div
+                    className="grid gap-1"
+                    style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
+                  >
+                    {(weeks ?? []).map((w) => (
+                      <div
+                        key={w.id}
+                        className="flex h-5 items-center justify-center font-data text-xs font-medium text-muted"
+                      >
+                        Wk{w.week_number}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-
-              <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
-                <div
-                  className="grid gap-1"
-                  style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
-                >
-                  {(weeks ?? []).map((w) => (
-                    <div
-                      key={w.id}
-                      className="flex h-5 items-center justify-center font-data text-xs font-medium text-muted"
-                    >
-                      Wk{w.week_number}
-                    </div>
-                  ))}
-                  {entries.flatMap((entry) =>
-                    (weeks ?? []).map((w) => {
-                      const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
-                      const base =
-                        "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
-
-                      const bonusStyle = cell.pick?.isBonus
-                        ? {
-                            background: `linear-gradient(135deg, ${
-                              cell.pick.color || "#232B45"
-                            } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
-                          }
-                        : undefined;
-
-                      const inner = cell.pick ? (
-                        cell.pick.isBonus ? (
-                          <>
-                            {cell.pick.logoUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={cell.pick.logoUrl}
-                                alt=""
-                                className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
-                              />
-                            )}
-                            {cell.pick.bonusLogoUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={cell.pick.bonusLogoUrl}
-                                alt=""
-                                className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
-                              />
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {cell.pick.logoUrl && (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
-                            )}
-                            {cell.pick.color && (
-                              <span
-                                className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                style={{ backgroundColor: cell.pick.color }}
-                              />
-                            )}
-                            <span
-                              className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
-                              style={
-                                !cell.locked && isReadableOnDark(cell.pick.color)
-                                  ? { color: cell.pick.color as string }
-                                  : undefined
-                              }
-                            >
-                              {cell.pick.shortName}
-                            </span>
-                          </>
-                        )
-                      ) : cell.locked ? (
-                        <span className="text-lg leading-none text-dead">&#10005;</span>
-                      ) : (
-                        <span className="text-lg leading-none text-muted">+</span>
-                      );
-
-                      const title = cell.pick?.isBonus
-                        ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
-                        : undefined;
-
-                      if (cell.locked) {
-                        return (
-                          <div
-                            key={`${entry.id}-${w.id}`}
-                            title={title}
-                            style={bonusStyle}
-                            className={`${base} border-edge bg-app opacity-50`}
-                          >
-                            {inner}
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <Link
-                          key={`${entry.id}-${w.id}`}
-                          href={`/survivor/${entry.id}?week=${w.week_number}`}
-                          title={title}
-                          style={bonusStyle}
-                          className={`${base} ${
-                            cell.pick
-                              ? "border-edge bg-surface hover:ring-2 hover:ring-gold-400"
-                              : "border-dashed border-edge bg-app hover:bg-surface-hover"
-                          }`}
-                        >
-                          {inner}
-                        </Link>
-                      );
-                    })
-                  )}
                 </div>
               </div>
+
+              {entries.map((entry) => (
+                <div key={entry.id} className="mb-3">
+                  <div className="flex gap-3">
+                    <div className="flex w-[110px] flex-shrink-0 flex-col justify-center px-2">
+                      <Link
+                        href={`/survivor/${entry.id}`}
+                        className="block truncate text-sm font-medium text-ink hover:text-gold-400"
+                      >
+                        {entry.entry_name || `Entry ${entry.entry_number}`}
+                      </Link>
+                      <span
+                        className={
+                          entry.status === "eliminated"
+                            ? "text-xs font-medium text-dead"
+                            : "text-xs font-medium text-alive"
+                        }
+                      >
+                        {entry.status === "eliminated" ? "Eliminated" : "Alive"}
+                      </span>
+                    </div>
+
+                    <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                      <div
+                        className="grid gap-1"
+                        style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
+                      >
+                        {(weeks ?? []).map((w) => {
+                          const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
+                          const base =
+                            "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
+
+                          const bonusStyle = cell.pick?.isBonus
+                            ? {
+                                background: `linear-gradient(135deg, ${
+                                  cell.pick.color || "#232B45"
+                                } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
+                              }
+                            : undefined;
+
+                          const inner = cell.pick ? (
+                            cell.pick.isBonus ? (
+                              <>
+                                {cell.pick.logoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={cell.pick.logoUrl}
+                                    alt=""
+                                    className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
+                                  />
+                                )}
+                                {cell.pick.bonusLogoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={cell.pick.bonusLogoUrl}
+                                    alt=""
+                                    className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {cell.pick.logoUrl && (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
+                                )}
+                                {cell.pick.color && (
+                                  <span
+                                    className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                    style={{ backgroundColor: cell.pick.color }}
+                                  />
+                                )}
+                                <span
+                                  className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
+                                  style={
+                                    !cell.locked && isReadableOnDark(cell.pick.color)
+                                      ? { color: cell.pick.color as string }
+                                      : undefined
+                                  }
+                                >
+                                  {cell.pick.shortName}
+                                </span>
+                              </>
+                            )
+                          ) : cell.locked ? (
+                            <span className="text-lg leading-none text-dead">&#10005;</span>
+                          ) : (
+                            <span className="text-lg leading-none text-muted">+</span>
+                          );
+
+                          const title = cell.pick?.isBonus
+                            ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
+                            : undefined;
+
+                          if (cell.locked) {
+                            return (
+                              <div
+                                key={`${entry.id}-${w.id}`}
+                                title={title}
+                                style={bonusStyle}
+                                className={`${base} border-edge bg-app opacity-50`}
+                              >
+                                {inner}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <Link
+                              key={`${entry.id}-${w.id}`}
+                              href={`/survivor/${entry.id}?week=${w.week_number}`}
+                              title={title}
+                              style={bonusStyle}
+                              className={`${base} ${
+                                cell.pick
+                                  ? "border-edge bg-surface hover:ring-2 hover:ring-gold-400"
+                                  : "border-dashed border-edge bg-app hover:bg-surface-hover"
+                              }`}
+                            >
+                              {inner}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Link
+                    href={`/survivor/entries/${entry.id}/bonus`}
+                    className="mt-1.5 flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
+                  >
+                    <span aria-hidden="true">⭐</span>
+                    Make a Bonus Pick for this entry
+                  </Link>
+                </div>
+              ))}
             </div>
           }
-          <div className="mb-4 flex flex-col gap-1.5">
-            {entries.map((entry) => (
-              <Link
-                key={entry.id}
-                href={`/survivor/entries/${entry.id}/bonus`}
-                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
-              >
-                <span aria-hidden="true">⭐</span>
-                Bonus Pick &mdash; {entry.entry_name || `Entry ${entry.entry_number}`}
-              </Link>
-            ))}
-          </div>
         </>
       )}
     </main>
