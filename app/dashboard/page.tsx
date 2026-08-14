@@ -117,75 +117,12 @@ export default async function DashboardPage({
         </div>
       )}
 
-      <h2 className="mb-3 mt-8 text-sm font-semibold uppercase tracking-wide text-muted">
-        Your entries
-      </h2>
-      {!entries || entries.length === 0 ? (
-        <div className="mb-6 rounded-lg border border-edge bg-surface p-4">
-          <p className="mb-3 text-sm text-muted">You don&apos;t have a Survivor entry yet.</p>
-          <Link
-            href="/survivor/new"
-            className="inline-block rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600"
-          >
-            Create an entry
-          </Link>
-        </div>
-      ) : (
-        <div className="mb-6 divide-y divide-edge rounded-lg border border-edge bg-surface">
-          {entries.map((entry) => (
-            <div key={entry.id} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-ink">
-                  {entry.entry_name || `Entry ${entry.entry_number}`}
-                </p>
-                <div className="mt-0.5 flex items-center gap-2 text-xs">
-                  <span
-                    className={
-                      entry.status === "eliminated"
-                        ? "font-medium text-dead"
-                        : "font-medium text-alive"
-                    }
-                  >
-                    {entry.status === "eliminated" ? "Eliminated" : "Alive"}
-                  </span>
-                  <span className="text-muted">&middot;</span>
-                  <span className={entry.dues_paid ? "text-alive" : "text-muted"}>
-                    {entry.dues_paid ? "Dues paid" : "Dues not marked paid"}
-                  </span>
-                </div>
-              </div>
-              <Link
-                href={`/survivor/${entry.id}`}
-                className="flex-shrink-0 rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
-              >
-                View entry
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mb-6 grid grid-cols-2 gap-2">
-        <Link
-          href="/survivor/rules"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Rules
-        </Link>
-        <Link
-          href="/survivor/schedule"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Schedule
-        </Link>
-      </div>
-
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
-        Payment info
+        Payment method
       </h2>
       <p className="mb-3 text-xs text-muted">
-        How you&apos;d like to pay (or how we can confirm you&apos;ve paid) your $30 entry fee per
-        entry.
+        Used to validate your entries across all CFBPools contests — pool-specific fees are
+        shown on each pool&apos;s own entry page.
       </p>
       {params.payment_saved === "1" && (
         <p className="mb-3 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">Payment info saved.</p>
@@ -227,12 +164,62 @@ export default async function DashboardPage({
         </button>
       </form>
 
-      <Link
-        href="/survivor"
-        className="mb-3 block rounded-md bg-gold-500 px-4 py-2.5 text-center text-base font-semibold text-app transition hover:bg-gold-600"
-      >
-        SEC Survivor Pool
-      </Link>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">My Pools</h2>
+      <div className="mb-8 rounded-lg border border-edge bg-surface p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-display text-sm font-bold uppercase tracking-wide text-ink">
+            SEC Survivor Pool
+          </p>
+          <Link href="/survivor" className="text-xs font-medium text-gold-400 hover:underline">
+            Pool home &rarr;
+          </Link>
+        </div>
+        {!entries || entries.length === 0 ? (
+          <div>
+            <p className="mb-3 text-sm text-muted">You don&apos;t have a Survivor entry yet.</p>
+            <Link
+              href="/survivor/new"
+              className="inline-block rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600"
+            >
+              Create an entry
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y divide-edge">
+            {entries.map((entry) => (
+              <div key={entry.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                <div>
+                  <p className="text-sm font-medium text-ink">
+                    {entry.entry_name || `Entry ${entry.entry_number}`}
+                  </p>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs">
+                    <span
+                      className={
+                        entry.status === "eliminated"
+                          ? "font-medium text-dead"
+                          : "font-medium text-alive"
+                      }
+                    >
+                      {entry.status === "eliminated" ? "Eliminated" : "Alive"}
+                    </span>
+                    <span className="text-muted">&middot;</span>
+                    <span className={entry.dues_paid ? "text-alive" : "text-muted"}>
+                      {entry.dues_paid ? "Dues paid" : "Dues not marked paid"}
+                    </span>
+                  </div>
+                </div>
+                <Link
+                  href={`/survivor/${entry.id}`}
+                  className="flex-shrink-0 rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
+                >
+                  View entry
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <form action={signOut}>
         <button
           type="submit"

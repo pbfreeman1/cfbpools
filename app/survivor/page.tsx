@@ -31,7 +31,7 @@ type CellData = {
 export default async function SurvivorHomePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; bonus_saved?: string; week?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -199,6 +199,12 @@ export default async function SurvivorHomePage({
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{params.error}</p>
       )}
 
+      {params.bonus_saved === "1" && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Bonus pick confirmed{params.week ? ` for Week ${params.week}` : ""}.
+        </p>
+      )}
+
       {missingPickEntries.length > 0 && currentWeek && (
         <div className="mb-6 rounded-md border border-gold-500 bg-gold-500/10 px-4 py-3">
           <p className="text-sm font-semibold text-gold-400">
@@ -264,34 +270,68 @@ export default async function SurvivorHomePage({
       </p>
 
       {/* Quick actions */}
-      <div className={canCreateAnother ? "mb-8 grid grid-cols-4 gap-2" : "mb-8 grid grid-cols-3 gap-2"}>
-        <Link
-          href="/survivor/locked"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          View Picks
-        </Link>
-        <Link
-          href="/survivor/schedule"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Schedule
-        </Link>
-        <Link
-          href="/survivor/rules"
-          className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Rules
-        </Link>
-        {canCreateAnother && (
+      {user && entries.length === 0 ? (
+        <div className="mb-8">
+          {canCreateAnother ? (
+            <>
+              <p className="mb-2 text-center text-base font-semibold text-ink">
+                You don&apos;t have an entry yet — create one to start picking.
+              </p>
+              <Link
+                href="/survivor/new"
+                className="mb-3 block rounded-md bg-gold-500 px-4 py-4 text-center text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-gold-500/20 transition hover:bg-gold-600"
+              >
+                + New Entry
+              </Link>
+            </>
+          ) : (
+            <p className="mb-3 text-center text-sm text-dead">Entry deadline has passed.</p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/survivor/schedule"
+              className="rounded-md px-3 py-2 text-center text-sm font-medium text-muted underline-offset-2 transition hover:text-ink hover:underline"
+            >
+              Schedule
+            </Link>
+            <Link
+              href="/survivor/rules"
+              className="rounded-md px-3 py-2 text-center text-sm font-medium text-muted underline-offset-2 transition hover:text-ink hover:underline"
+            >
+              Rules
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className={canCreateAnother ? "mb-8 grid grid-cols-4 gap-2" : "mb-8 grid grid-cols-3 gap-2"}>
           <Link
-            href="/survivor/new"
-            className="rounded-md bg-gold-500 px-3 py-2.5 text-center text-sm font-semibold text-app transition hover:bg-gold-600"
+            href="/survivor/locked"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
           >
-            + New Entry
+            View Picks
           </Link>
-        )}
-      </div>
+          <Link
+            href="/survivor/schedule"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Schedule
+          </Link>
+          <Link
+            href="/survivor/rules"
+            className="rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Rules
+          </Link>
+          {canCreateAnother && (
+            <Link
+              href="/survivor/new"
+              className="rounded-md bg-gold-500 px-3 py-2.5 text-center text-sm font-semibold text-app transition hover:bg-gold-600"
+            >
+              + New Entry
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* Personalized section */}
       {!user ? (
@@ -304,14 +344,12 @@ export default async function SurvivorHomePage({
             Log in
           </Link>
         </div>
-      ) : (
+      ) : entries.length === 0 ? null : (
         <>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted">
             Your entries
           </h2>
-          {entries.length === 0 ? (
-            <p className="mb-4 text-sm text-muted">You don&apos;t have an entry yet.</p>
-          ) : (
+          {
             // A genuinely fixed left column (outside the horizontally-scrolling
             // week grid) rather than `position: sticky` table cells — sticky
             // <td>/<th> is unreliable during horizontal scroll on mobile Safari.
@@ -455,10 +493,19 @@ export default async function SurvivorHomePage({
                 </div>
               </div>
             </div>
-          )}
-          {deadlinePassed && entries.length === 0 && (
-            <p className="text-center text-sm text-dead">Entry deadline has passed.</p>
-          )}
+          }
+          <div className="mb-4 flex flex-col gap-1.5">
+            {entries.map((entry) => (
+              <Link
+                key={entry.id}
+                href={`/survivor/entries/${entry.id}/bonus`}
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
+              >
+                <span aria-hidden="true">⭐</span>
+                Bonus Pick &mdash; {entry.entry_name || `Entry ${entry.entry_number}`}
+              </Link>
+            ))}
+          </div>
         </>
       )}
     </main>

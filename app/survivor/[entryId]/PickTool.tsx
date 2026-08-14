@@ -149,7 +149,7 @@ export default function PickTool({
           </p>
           {!week.locked && !eliminated && (
             <Link
-              href={`/survivor/${entryId}/bonus`}
+              href={`/survivor/entries/${entryId}/bonus`}
               className="text-sm font-medium text-gold-400 hover:underline"
             >
               Manage on Bonus Picks page &rarr;
@@ -173,7 +173,12 @@ export default function PickTool({
           )}
         </div>
       ) : (
-        <form action={savePick} className="rounded-md border-2 border-gold-500 px-4 py-3">
+        <form
+          action={savePick}
+          className={
+            "rounded-md border-2 border-gold-500 px-4 py-3" + (selectedTeam ? " pb-24" : "")
+          }
+        >
           <input type="hidden" name="entryId" value={entryId} />
           <input type="hidden" name="scheduleId" value={week.scheduleId} />
           <input type="hidden" name="teamId" value={selectedTeam} />
@@ -191,7 +196,7 @@ export default function PickTool({
                   key={team.id}
                   team={team}
                   selected={selectedTeam === team.id}
-                  onClick={() => setSelectedTeam(team.id)}
+                  onClick={() => setSelectedTeam(team.id === selectedTeam ? "" : team.id)}
                 />
               ))}
             </div>
@@ -203,13 +208,45 @@ export default function PickTool({
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={!selectedTeam}
-            className="w-full rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Save pick
-          </button>
+          {!selectedTeam && (
+            <button
+              type="submit"
+              disabled
+              className="w-full rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Save pick
+            </button>
+          )}
+
+          {selectedTeam &&
+            (() => {
+              const chosen = week.teamOptions.find((t) => t.id === selectedTeam);
+              return (
+                <div className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-surface px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.25)]">
+                  <div className="mx-auto flex max-w-sm items-center gap-3 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      {chosen?.logo_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={chosen.logo_url}
+                          alt=""
+                          className="h-8 w-8 flex-shrink-0 object-contain"
+                        />
+                      )}
+                      <span className="truncate text-sm font-semibold text-ink">
+                        {chosen?.school_name}
+                      </span>
+                    </div>
+                    <button
+                      type="submit"
+                      className="flex-shrink-0 rounded-md bg-gold-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-gold-600"
+                    >
+                      Confirm Pick
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
         </form>
       )}
     </div>

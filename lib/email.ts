@@ -126,6 +126,31 @@ export function pickConfirmationEmail({
   `);
 }
 
+export function bonusPickConfirmationEmail({
+  firstName,
+  entryName,
+  weekNumber,
+  teamAName,
+  teamBName,
+}: {
+  firstName: string;
+  entryName: string;
+  weekNumber: number;
+  teamAName: string;
+  teamBName: string;
+}) {
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">Bonus pick confirmed — Week ${weekNumber}</h1>
+    <p>Hi ${firstName},</p>
+    <p>Your bonus pick for <strong>${entryName}</strong> is confirmed:</p>
+    <p style="font-size: 18px; font-weight: 600; margin: 16px 0;">
+      ${teamAName} + ${teamBName}
+    </p>
+    <p>Both teams must win this week for this entry to advance. You can change this anytime before either game kicks off.</p>
+    <p><a href="https://cfbpools.com/survivor" style="color: #D99A26;">View your entries &rarr;</a></p>
+  `);
+}
+
 const detailRow = (label: string, value: string) => `
   <tr>
     <td style="padding: 4px 12px 4px 0; color: #8B93A7; font-size: 13px; white-space: nowrap; vertical-align: top;">${label}</td>

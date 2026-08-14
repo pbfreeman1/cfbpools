@@ -218,7 +218,7 @@ export default async function SurvivorEntryPage({
       </p>
 
       <Link
-        href={`/survivor/${entryId}/bonus`}
+        href={`/survivor/entries/${entryId}/bonus`}
         className="mb-6 block rounded-md border border-gold-500 px-4 py-2.5 text-center text-sm font-semibold text-gold-400 transition hover:bg-gold-500/10"
       >
         Manage Bonus Picks

@@ -44,9 +44,6 @@ export default async function Home() {
           <h1 className="font-display text-[clamp(3.25rem,15vw,9rem)] font-bold uppercase leading-[0.9] tracking-tight text-ink drop-shadow-[0_8px_30px_rgba(0,0,0,0.55)]">
             CFB<span className="text-gold-400">Pools</span>
           </h1>
-          <p className="mt-4 font-display text-base uppercase tracking-[0.2em] text-muted sm:text-lg">
-            Two pools. One season. Outlast the field.
-          </p>
         </div>
 
         {/* Pool cards */}

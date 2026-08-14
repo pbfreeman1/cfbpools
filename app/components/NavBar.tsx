@@ -16,6 +16,7 @@ export default async function NavBar() {
   } = await supabase.auth.getUser();
 
   let initials: string | null = null;
+  let isAdmin = false;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -23,13 +24,22 @@ export default async function NavBar() {
       .eq("id", user.id)
       .single();
     initials = getInitials(profile?.first_name, profile?.last_name, user.email);
+
+    // Goes through the is_admin() security-definer helper rather than
+    // selecting profiles.is_admin directly, so this check runs the exact
+    // same trusted logic the RLS policies rely on (see app/admin/layout.tsx).
+    const { data } = await supabase.rpc("is_admin");
+    isAdmin = data ?? false;
   }
 
   const mobileLinks = [
     { href: "/survivor", label: "Survivor" },
     { href: "#", label: "Pick'em", disabled: true },
     ...(user
-      ? [{ href: "/dashboard", label: "Dashboard" }]
+      ? [
+          { href: "/dashboard", label: "Dashboard" },
+          ...(isAdmin ? [{ href: "/admin", label: "Admin" }] : []),
+        ]
       : [
           { href: "/login", label: "Log in" },
           { href: "/signup", label: "Sign up" },
@@ -57,6 +67,11 @@ export default async function NavBar() {
               <Link href="/dashboard" className="text-ink hover:text-gold-400">
                 Dashboard
               </Link>
+              {isAdmin && (
+                <Link href="/admin" className="text-ink hover:text-gold-400">
+                  Admin
+                </Link>
+              )}
               <Link
                 href="/dashboard"
                 title={user.email ?? undefined}
