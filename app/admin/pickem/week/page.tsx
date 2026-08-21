@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { updatePickemGame, clearPickemSpreadOverride } from "@/app/actions/admin-pickem";
+import { triggerSync } from "@/app/actions/admin-system";
 import { getMatchupPrefix } from "@/app/components/MatchupLine";
 
 type TeamRef = {
@@ -36,7 +37,7 @@ function TeamLabel({ team }: { team: TeamRef }) {
 export default async function AdminPickemWeekPage({
   searchParams,
 }: {
-  searchParams: Promise<{ schedule_id?: string; error?: string; saved?: string }>;
+  searchParams: Promise<{ schedule_id?: string; error?: string; saved?: string; synced?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -89,28 +90,49 @@ export default async function AdminPickemWeekPage({
       {params.saved && (
         <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">Saved.</p>
       )}
+      {params.synced && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Sync complete — {params.synced}.
+        </p>
+      )}
 
-      <form action="/admin/pickem/week" method="GET" className="mb-6 flex flex-wrap items-center gap-2">
-        <select
-          name="schedule_id"
-          defaultValue={scheduleId}
-          className="rounded-md border border-edge bg-app px-3 py-1.5 text-sm text-ink"
-        >
-          <option value="">— Select a week —</option>
-          {(weeks ?? []).map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.season} — Week {w.week_number}
-              {w.id === appSettings?.current_week_id ? " (current)" : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
-        >
-          Go
-        </button>
-      </form>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <form action="/admin/pickem/week" method="GET" className="flex flex-wrap items-center gap-2">
+          <select
+            name="schedule_id"
+            defaultValue={scheduleId}
+            className="rounded-md border border-edge bg-app px-3 py-1.5 text-sm text-ink"
+          >
+            <option value="">— Select a week —</option>
+            {(weeks ?? []).map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.season} — Week {w.week_number}
+                {w.id === appSettings?.current_week_id ? " (current)" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Go
+          </button>
+        </form>
+
+        <form action={triggerSync}>
+          <input
+            type="hidden"
+            name="returnTo"
+            value={scheduleId ? `/admin/pickem/week?schedule_id=${scheduleId}` : "/admin/pickem/week"}
+          />
+          <button
+            type="submit"
+            className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Sync lines from CFBD
+          </button>
+        </form>
+      </div>
 
       {!scheduleId ? (
         <p className="text-sm text-muted">

@@ -1,12 +1,18 @@
-// Syncs FBS teams, the regular-season week calendar, and the full game
-// schedule from collegefootballdata.com into master_teams / schedule / games.
+// Syncs FBS teams, the regular-season week calendar, the full game schedule,
+// and current betting lines (into games.home_spread) from
+// collegefootballdata.com into master_teams / schedule / games.
 // Also backfills a lightweight master_teams row (name + logo, conference:
 // "FCS") for any FCS team an SEC team actually plays, so those games aren't
 // silently dropped — see the "3a." step below.
 //
-// Does NOT sync betting spreads — those are loaded weekly by the admin closer
-// to game day, per the CFBPools workflow (spreads aren't available far in
-// advance, and the admin curates which 6 games are eligible for Pickem).
+// Lines are a best-effort snapshot at sync time — CFBD often has no line
+// posted yet for games far from kickoff (home_spread just stays null for
+// those), which is why this is meant to be run manually close to the admin's
+// weekly Pickem review rather than relied on far in advance. Once a game is
+// selected into that week's Pickem pool via /admin/pickem/week, its spread is
+// locked into pickem_spread_override separately — this sync only ever writes
+// home_spread, so a later re-run can never move a game's line out from under
+// an admin who already locked it in.
 //
 // Invoke with a POST body of { "year": 2026 } (defaults to the current year).
 // Add "triggered_by": "<admin user id>" when invoking manually from the admin
@@ -157,7 +163,7 @@ Deno.serve(async (req) => {
     // CFBD returns games across every division (FCS, DII, etc.), which is why
     // the first run had ~877 skipped games that were pure FCS-vs-FCS matchups
     // with nothing to do with our FBS-only master_teams table.
-    // Spreads are intentionally left null here.
+    // Spreads are populated separately by the lines sync below (step 4).
     const gamesRes = await fetch(
       `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs`,
       { headers: cfbdHeaders(CFBD_API_KEY) }
@@ -295,6 +301,48 @@ Deno.serve(async (req) => {
       gamesSynced++;
     }
 
+    // 4. Lines — current betting spreads, matched on cfbd_game_id (no team-id
+    // translation needed, unlike the games loop above). Non-fatal: the
+    // games/teams/schedule sync above is more critical and has already
+    // succeeded by this point, so a CFBD /lines outage shouldn't fail the
+    // whole run — same pattern as the FCS opponent backfill in step 3a.
+    let linesSynced = 0;
+    let linesSyncError: string | null = null;
+    try {
+      const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular`, {
+        headers: cfbdHeaders(CFBD_API_KEY),
+      });
+      if (!linesRes.ok) {
+        throw new Error(`CFBD /lines failed: ${linesRes.status} ${await linesRes.text()}`);
+      }
+      const linesGames = await linesRes.json();
+
+      for (const g of linesGames) {
+        const providerLines: { provider: string; spread: string }[] = g.lines ?? [];
+        if (providerLines.length === 0) continue; // no book has posted a line yet — leave home_spread null
+
+        // Prefer the consensus line; fall back to whichever sportsbook is first.
+        const chosen = providerLines.find((l) => l.provider === "consensus") ?? providerLines[0];
+        const spread = Number(chosen.spread);
+        if (chosen.spread == null || Number.isNaN(spread)) continue;
+
+        // Already in our sign convention (positive = home underdog, negative
+        // = home favored) — written straight into home_spread, never into
+        // pickem_spread_override, which only the admin's week-setup save can
+        // set.
+        const { data: updated, error } = await supabase
+          .from("games")
+          .update({ home_spread: spread })
+          .eq("cfbd_game_id", g.id)
+          .select("id");
+        if (error) throw new Error(`games spread update failed for game ${g.id}: ${error.message}`);
+        if (updated && updated.length > 0) linesSynced++;
+      }
+    } catch (err) {
+      linesSyncError = (err as Error).message;
+      console.error("[cfbd-sync] Lines sync failed:", linesSyncError);
+    }
+
     await finishSyncLog(supabase, syncLogId, {
       status: "success",
       completed_at: new Date().toISOString(),
@@ -313,6 +361,8 @@ Deno.serve(async (req) => {
         skippedNoHomeTeam,
         skippedNoAwayTeam,
         sampleSkips,
+        linesSynced,
+        ...(linesSyncError ? { linesSyncError } : {}),
       }),
       { headers: { "Content-Type": "application/json" } }
     );
