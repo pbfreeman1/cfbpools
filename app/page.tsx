@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ENTRY_DEADLINE } from "@/lib/season";
+import { formatDeadline } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import LogoMosaic from "@/app/components/LogoMosaic";
 import PoolCardsScroller from "@/app/components/PoolCardsScroller";
@@ -75,12 +76,7 @@ export default async function Home() {
                 </div>
                 <div className="text-right">
                   <p className="font-data text-lg font-bold leading-none text-ink sm:text-xl">
-                    {ENTRY_DEADLINE.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
+                    {formatDeadline(ENTRY_DEADLINE)}
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
                     Entry deadline

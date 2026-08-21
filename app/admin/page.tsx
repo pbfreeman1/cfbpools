@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { formatKickoff } from "@/lib/formatDate";
 
 const QUICK_LINKS = [
   { href: "/admin/survivor/results", label: "Enter Results", desc: "Record winners, run eliminations" },
@@ -125,7 +126,7 @@ export default async function AdminDashboardPage() {
             <span className={`rounded px-2 py-0.5 text-xs font-medium uppercase ${statusBadgeClass(lastSync.status)}`}>
               {lastSync.status}
             </span>
-            <span className="text-ink">Last sync {new Date(lastSync.started_at).toLocaleString()}</span>
+            <span className="text-ink">Last sync {formatKickoff(lastSync.started_at)}</span>
             {lastSync.games_updated !== null && (
               <span className="text-muted">· {lastSync.games_updated} games updated</span>
             )}
@@ -138,7 +139,7 @@ export default async function AdminDashboardPage() {
           <div className="mt-3 space-y-1.5 border-t border-edge pt-3">
             {recentErrors.map((e) => (
               <p key={e.id} className="text-xs text-dead">
-                {new Date(e.started_at).toLocaleString()} — {e.error_message || "Unknown error"}
+                {formatKickoff(e.started_at)} — {e.error_message || "Unknown error"}
               </p>
             ))}
           </div>

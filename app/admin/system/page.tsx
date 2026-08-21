@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { triggerSync } from "@/app/actions/admin-system";
+import { formatKickoff } from "@/lib/formatDate";
 
 function statusBadgeClass(status: string) {
   if (status === "success") return "bg-alive/10 text-alive";
@@ -72,7 +73,7 @@ export default async function AdminSystemPage({
             <span className={`w-fit rounded px-2 py-0.5 text-xs font-medium uppercase ${statusBadgeClass(log.status)}`}>
               {log.status}
             </span>
-            <span className="text-sm text-ink">{new Date(log.started_at).toLocaleString()}</span>
+            <span className="text-sm text-ink">{formatKickoff(log.started_at)}</span>
             <span className="text-sm text-muted">{log.games_updated ?? "—"}</span>
             <span className="text-xs text-muted">
               {log.triggered_by ? adminNameById.get(log.triggered_by) || "Admin" : "Cron"}

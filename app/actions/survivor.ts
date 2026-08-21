@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ENTRY_DEADLINE } from "@/lib/season";
+import { formatKickoff, formatLongDate } from "@/lib/formatDate";
 import {
   sendEmail,
   adminEmail,
@@ -60,7 +61,7 @@ export async function createEntry(formData: FormData) {
       .single();
 
     const firstName = profile?.first_name || "there";
-    const createdAt = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+    const createdAt = formatKickoff(new Date());
 
     if (user.email) {
       await sendEmail({
@@ -69,11 +70,7 @@ export async function createEntry(formData: FormData) {
         html: welcomeToSurvivorPoolEmail({
           firstName,
           entryName: finalEntryName,
-          deadlineText: ENTRY_DEADLINE.toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          }),
+          deadlineText: formatLongDate(ENTRY_DEADLINE),
         }),
         stream: "welcome",
       });

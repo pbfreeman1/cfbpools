@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { sendEmail, adminEmail, adminNewAccountEmail } from "@/lib/email";
+import { formatKickoff } from "@/lib/formatDate";
 
 export async function signUp(formData: FormData) {
   // Honeypot: real users never see or fill this field. A bot that
@@ -59,7 +60,7 @@ export async function signUp(formData: FormData) {
           lastName,
           email,
           phone: phone || null,
-          signedUpAt: new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }),
+          signedUpAt: formatKickoff(new Date()),
         }),
         stream: "picks",
       });

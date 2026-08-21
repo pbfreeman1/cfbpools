@@ -57,6 +57,69 @@ export async function updatePickemGame(formData: FormData) {
   redirect(`/admin/pickem/week?schedule_id=${scheduleId}&saved=1`);
 }
 
+// The same lock-on-selection rule the individual row Save applies (the form's
+// spread field defaults to the effective spread — override if set, else the
+// current CFBD value — so saving with no prior override freezes it to
+// whatever CFBD shows right now). Shared here so bulk selection can't drift
+// from that rule.
+function lockedSpreadOnSelect(currentOverride: number | null, homeSpread: number | null) {
+  return currentOverride ?? homeSpread;
+}
+
+export async function bulkSetPickemSelection(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const scheduleId = formData.get("scheduleId") as string;
+  const selected = formData.get("selected") === "true";
+  if (!scheduleId) {
+    redirect("/admin/pickem/week?error=" + encodeURIComponent("Missing week reference"));
+  }
+
+  const { data: weekGames, error: fetchErr } = await supabase
+    .from("games")
+    .select("id, home_spread, pickem_spread_override")
+    .eq("schedule_id", scheduleId);
+  if (fetchErr) {
+    redirect(
+      `/admin/pickem/week?schedule_id=${scheduleId}&error=` + encodeURIComponent(fetchErr.message)
+    );
+  }
+
+  let affected = 0;
+  for (const g of weekGames ?? []) {
+    // Clearing never touches pickem_spread_override — whether a game is in
+    // the pool and whether its spread is locked are separate concerns.
+    const nextOverride = selected ? lockedSpreadOnSelect(g.pickem_spread_override, g.home_spread) : g.pickem_spread_override;
+
+    const { error } = await supabase
+      .from("games")
+      .update({ pickem_selected: selected, pickem_spread_override: nextOverride })
+      .eq("id", g.id);
+    if (error) {
+      redirect(
+        `/admin/pickem/week?schedule_id=${scheduleId}&error=` + encodeURIComponent(error.message)
+      );
+    }
+    affected++;
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    selected ? "bulk_select_pickem_games" : "bulk_clear_pickem_games",
+    "games",
+    scheduleId,
+    {},
+    { scheduleId, selected, gamesAffected: affected },
+    selected
+      ? `Selected all ${affected} game(s) for Pick'em this week — any unset spread was locked to its current CFBD value`
+      : `Cleared Pick'em selection for all ${affected} game(s) this week — spread overrides left untouched`
+  );
+
+  revalidatePath("/admin/pickem/week");
+  redirect(`/admin/pickem/week?schedule_id=${scheduleId}&saved=1`);
+}
+
 export async function clearPickemSpreadOverride(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 

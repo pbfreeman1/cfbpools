@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameResult } from "@/lib/survivorElimination";
 import { commitWeekResults, reinstateEntry } from "@/app/actions/admin-survivor";
 import { getMatchupPrefix } from "@/app/components/MatchupLine";
+import { formatKickoff } from "@/lib/formatDate";
 
 type TeamRef = {
   id: string;
@@ -258,7 +259,7 @@ export default async function AdminSurvivorResultsPage({
                     </label>
                   </div>
                   <span className="text-xs font-medium uppercase text-muted">
-                    {isFinal ? "Final (synced)" : new Date(g.kickoff_time).toLocaleString()}
+                    {isFinal ? "Final (synced)" : formatKickoff(g.kickoff_time)}
                   </span>
                 </div>
               );

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
 import { isReadableOnDark } from "@/lib/color";
+import { formatMonthDay } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
 import EntryCreatedModal from "@/app/survivor/EntryCreatedModal";
@@ -263,7 +264,7 @@ export default async function SurvivorHomePage({
             {" "}
             &middot; Entry deadline{" "}
             <span className="font-medium">
-              {ENTRY_DEADLINE.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {formatMonthDay(ENTRY_DEADLINE)}
             </span>
           </>
         )}

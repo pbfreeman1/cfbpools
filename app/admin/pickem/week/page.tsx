@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { updatePickemGame, clearPickemSpreadOverride } from "@/app/actions/admin-pickem";
+import { updatePickemGame, clearPickemSpreadOverride, bulkSetPickemSelection } from "@/app/actions/admin-pickem";
 import { triggerSync } from "@/app/actions/admin-system";
-import { getMatchupPrefix } from "@/app/components/MatchupLine";
+import { GameMatchupLine } from "@/app/components/MatchupLine";
+import { formatKickoff } from "@/lib/formatDate";
 
 type TeamRef = {
   id: string;
@@ -21,18 +22,6 @@ type GameRow = {
   home_team: TeamRef;
   away_team: TeamRef;
 };
-
-function TeamLabel({ team }: { team: TeamRef }) {
-  return (
-    <span className="flex items-center gap-2">
-      {team.logo_url && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.logo_url} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
-      )}
-      <span className="text-sm font-medium text-ink">{team.short_name || team.school_name}</span>
-    </span>
-  );
-}
 
 export default async function AdminPickemWeekPage({
   searchParams,
@@ -158,6 +147,29 @@ export default async function AdminPickemWeekPage({
           </div>
           {week?.label && <p className="mb-4 text-sm text-muted">{week.label}</p>}
 
+          <div className="mb-3 flex items-center gap-2">
+            <form action={bulkSetPickemSelection}>
+              <input type="hidden" name="scheduleId" value={scheduleId} />
+              <input type="hidden" name="selected" value="true" />
+              <button
+                type="submit"
+                className="rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
+              >
+                Select All
+              </button>
+            </form>
+            <form action={bulkSetPickemSelection}>
+              <input type="hidden" name="scheduleId" value={scheduleId} />
+              <input type="hidden" name="selected" value="false" />
+              <button
+                type="submit"
+                className="rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
+              >
+                Clear All
+              </button>
+            </form>
+          </div>
+
           <div className="divide-y divide-edge rounded-lg border border-edge bg-surface">
             {games.length === 0 && (
               <p className="px-4 py-3 text-sm text-muted">No games scheduled for this week.</p>
@@ -181,18 +193,20 @@ export default async function AdminPickemWeekPage({
                       <span className="text-xs font-medium uppercase text-muted">Include</span>
                     </label>
 
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1.5 text-xs text-muted">
-                        {getMatchupPrefix(g.away_team.id, g.home_team.id)}
-                      </span>
-                      <TeamLabel team={g.away_team} />
-                      <span className="flex items-center gap-1.5 text-xs text-muted">
-                        {getMatchupPrefix(g.home_team.id, g.home_team.id)}
-                      </span>
-                      <TeamLabel team={g.home_team} />
-                    </div>
+                    <GameMatchupLine
+                      home={{
+                        id: g.home_team.id,
+                        name: g.home_team.short_name || g.home_team.school_name,
+                        logo_url: g.home_team.logo_url,
+                      }}
+                      away={{
+                        id: g.away_team.id,
+                        name: g.away_team.short_name || g.away_team.school_name,
+                        logo_url: g.away_team.logo_url,
+                      }}
+                    />
 
-                    <span className="text-xs text-muted">{new Date(g.kickoff_time).toLocaleString()}</span>
+                    <span className="text-xs text-muted">{formatKickoff(g.kickoff_time)}</span>
 
                     <div className="ml-auto flex items-center gap-2">
                       <label className="flex flex-col gap-1">
