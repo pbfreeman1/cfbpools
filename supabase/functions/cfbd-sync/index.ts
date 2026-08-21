@@ -18,6 +18,12 @@
 // Add "triggered_by": "<admin user id>" when invoking manually from the admin
 // portal so the sync_logs row records who kicked it off; cron invocations
 // omit it and are logged with triggered_by = null.
+// Add "week": <n> to scope the /games and /lines calls to a single CFBD week
+// (used by the "Sync lines from CFBD" button on /admin/pickem/week, so a
+// Tuesday-review refresh only touches that week's games instead of the whole
+// season) — /teams/fbs and /calendar always stay full-season since neither is
+// week-specific. Omit "week" (as /admin/system's full sync does) to sync
+// every week's games/lines as before.
 // Safe to re-run: everything is upserted on its CFBD id, so running this
 // again just refreshes scores/status for games already in the table.
 
@@ -70,6 +76,12 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const season = body.year ?? new Date().getFullYear();
   const triggeredBy: string | null = body.triggered_by ?? null;
+  // Optional week scope — when set, only that week's /games and /lines are
+  // fetched (both cheap, both safe to re-run repeatedly for one week at a
+  // time from the Pickem admin page). /teams/fbs and /calendar stay
+  // full-season regardless: they aren't week-specific and are cheap either way.
+  const week: number | null = body.week ?? null;
+  const weekParam = week ? `&week=${week}` : "";
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -165,7 +177,7 @@ Deno.serve(async (req) => {
     // with nothing to do with our FBS-only master_teams table.
     // Spreads are populated separately by the lines sync below (step 4).
     const gamesRes = await fetch(
-      `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs`,
+      `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs${weekParam}`,
       { headers: cfbdHeaders(CFBD_API_KEY) }
     );
     if (!gamesRes.ok) {
@@ -309,7 +321,7 @@ Deno.serve(async (req) => {
     let linesSynced = 0;
     let linesSyncError: string | null = null;
     try {
-      const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular`, {
+      const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular${weekParam}`, {
         headers: cfbdHeaders(CFBD_API_KEY),
       });
       if (!linesRes.ok) {
@@ -352,6 +364,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         season,
+        week,
         teamsSynced,
         fcsTeamsSynced,
         weeksSynced,

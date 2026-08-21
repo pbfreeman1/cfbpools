@@ -4,6 +4,9 @@ import { updatePickemGame, clearPickemSpreadOverride, bulkSetPickemSelection } f
 import { triggerSync } from "@/app/actions/admin-system";
 import { GameMatchupLine } from "@/app/components/MatchupLine";
 import { formatKickoff } from "@/lib/formatDate";
+import CheckboxBulkToggle from "./CheckboxBulkToggle";
+
+const BULK_FORM_ID = "pickem-bulk-select-form";
 
 type TeamRef = {
   id: string;
@@ -26,7 +29,14 @@ type GameRow = {
 export default async function AdminPickemWeekPage({
   searchParams,
 }: {
-  searchParams: Promise<{ schedule_id?: string; error?: string; saved?: string; synced?: string }>;
+  searchParams: Promise<{
+    schedule_id?: string;
+    error?: string;
+    saved?: string;
+    synced?: string;
+    added?: string;
+    removed?: string;
+  }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -84,44 +94,34 @@ export default async function AdminPickemWeekPage({
           Sync complete — {params.synced}.
         </p>
       )}
+      {params.added !== undefined && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Added {params.added} game{params.added === "1" ? "" : "s"}, removed{" "}
+          {params.removed ?? "0"} game{params.removed === "1" ? "" : "s"}.
+        </p>
+      )}
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <form action="/admin/pickem/week" method="GET" className="flex flex-wrap items-center gap-2">
-          <select
-            name="schedule_id"
-            defaultValue={scheduleId}
-            className="rounded-md border border-edge bg-app px-3 py-1.5 text-sm text-ink"
-          >
-            <option value="">— Select a week —</option>
-            {(weeks ?? []).map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.season} — Week {w.week_number}
-                {w.id === appSettings?.current_week_id ? " (current)" : ""}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
-          >
-            Go
-          </button>
-        </form>
-
-        <form action={triggerSync}>
-          <input
-            type="hidden"
-            name="returnTo"
-            value={scheduleId ? `/admin/pickem/week?schedule_id=${scheduleId}` : "/admin/pickem/week"}
-          />
-          <button
-            type="submit"
-            className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
-          >
-            Sync lines from CFBD
-          </button>
-        </form>
-      </div>
+      <form action="/admin/pickem/week" method="GET" className="mb-6 flex flex-wrap items-center gap-2">
+        <select
+          name="schedule_id"
+          defaultValue={scheduleId}
+          className="rounded-md border border-edge bg-app px-3 py-1.5 text-sm text-ink"
+        >
+          <option value="">— Select a week —</option>
+          {(weeks ?? []).map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.season} — Week {w.week_number}
+              {w.id === appSettings?.current_week_id ? " (current)" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
+        >
+          Go
+        </button>
+      </form>
 
       {!scheduleId ? (
         <p className="text-sm text-muted">
@@ -142,30 +142,53 @@ export default async function AdminPickemWeekPage({
                 selectedCount < 6 ? "bg-gold-500/10 text-gold-400" : "bg-alive/10 text-alive"
               }`}
             >
-              {selectedCount} selected{selectedCount < 6 ? " — fewer than 6" : ""}
+              {selectedCount} added{selectedCount < 6 ? " — fewer than 6" : ""}
             </span>
           </div>
           {week?.label && <p className="mb-4 text-sm text-muted">{week.label}</p>}
 
-          <div className="mb-3 flex items-center gap-2">
-            <form action={bulkSetPickemSelection}>
-              <input type="hidden" name="scheduleId" value={scheduleId} />
-              <input type="hidden" name="selected" value="true" />
+          {/* Step 1 — refresh data. Never writes pickem_selected/pickem_spread_override. */}
+          <div className="mb-4 rounded-lg border border-edge bg-surface p-3">
+            <form action={triggerSync} className="flex flex-wrap items-center justify-between gap-3">
+              <input
+                type="hidden"
+                name="returnTo"
+                value={`/admin/pickem/week?schedule_id=${scheduleId}`}
+              />
+              <input type="hidden" name="week" value={week?.week_number ?? ""} />
+              <p className="text-xs text-muted">
+                <span className="font-semibold text-ink">Step 1.</span> Refresh this week&apos;s
+                games and lines from CFBD before selecting — this never changes what&apos;s
+                added or any locked spread.
+              </p>
               <button
                 type="submit"
-                className="rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
+                className="flex-shrink-0 rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
               >
-                Select All
+                Sync lines from CFBD
               </button>
             </form>
-            <form action={bulkSetPickemSelection}>
+          </div>
+
+          {/* Step 2 — stage checkboxes locally, commit with one submit. */}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="mb-1 text-xs">
+                <span className="font-semibold text-ink">Step 2.</span>{" "}
+                <span className="text-muted">
+                  Every box below starts checked — uncheck what you don&apos;t want, then
+                  submit.
+                </span>
+              </p>
+              <CheckboxBulkToggle formId={BULK_FORM_ID} />
+            </div>
+            <form id={BULK_FORM_ID} action={bulkSetPickemSelection}>
               <input type="hidden" name="scheduleId" value={scheduleId} />
-              <input type="hidden" name="selected" value="false" />
               <button
                 type="submit"
-                className="rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
+                className="rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600"
               >
-                Clear All
+                Add Selected Games
               </button>
             </form>
           </div>
@@ -176,7 +199,11 @@ export default async function AdminPickemWeekPage({
             )}
             {games.map((g) => {
               const hasOverride = g.pickem_spread_override !== null;
-              const effectiveSpread = g.pickem_spread_override ?? g.home_spread;
+              // Added games show the locked, frozen truth; not-yet-added
+              // games preview the live CFBD value that submitting would lock.
+              const spreadDefaultValue = g.pickem_selected
+                ? g.pickem_spread_override ?? g.home_spread
+                : g.home_spread;
               return (
                 <div
                   key={g.id}
@@ -188,16 +215,32 @@ export default async function AdminPickemWeekPage({
                   <form action={updatePickemGame} className="contents">
                     <input type="hidden" name="gameId" value={g.id} />
                     <input type="hidden" name="scheduleId" value={scheduleId} />
+                    {/* Mirrors the game's current DB selection state (not the
+                        staging checkbox below, which belongs to the master
+                        bulk form via form=) so Save only ever changes the
+                        spread, never accidentally flips selection. */}
+                    {g.pickem_selected && <input type="hidden" name="pickemSelected" value="on" />}
 
-                    <label className="flex items-center gap-2 pt-0.5">
-                      <input
-                        type="checkbox"
-                        name="pickemSelected"
-                        defaultChecked={g.pickem_selected}
-                        className="accent-gold-500"
-                      />
-                      <span className="text-xs font-medium uppercase text-muted">Include</span>
-                    </label>
+                    <div className="flex flex-col items-start gap-1 pt-0.5">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          name="gameIds"
+                          value={g.id}
+                          form={BULK_FORM_ID}
+                          defaultChecked
+                          className="accent-gold-500"
+                        />
+                        <span className="text-xs font-medium uppercase text-muted">Include</span>
+                      </label>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          g.pickem_selected ? "bg-alive/10 text-alive" : "bg-surface-hover text-muted"
+                        }`}
+                      >
+                        {g.pickem_selected ? "Added" : "Not added"}
+                      </span>
+                    </div>
 
                     <div className="min-w-0">
                       <GameMatchupLine
@@ -222,7 +265,7 @@ export default async function AdminPickemWeekPage({
                           step="0.5"
                           name="spreadOverride"
                           required
-                          defaultValue={effectiveSpread ?? ""}
+                          defaultValue={spreadDefaultValue ?? ""}
                           className="w-20 rounded-md border border-edge bg-app px-2 py-1 text-right text-sm text-ink"
                         />
                         <button

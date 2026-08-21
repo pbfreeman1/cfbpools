@@ -13,13 +13,19 @@ export async function triggerSync(formData: FormData) {
   const returnTo = (formData.get("returnTo") as string) || "/admin/system";
   const sep = returnTo.includes("?") ? "&" : "?";
 
+  // Optional week scope — only passed when the caller (the Pickem week-setup
+  // page) includes a hidden `week` field. /admin/system's full-season "Sync
+  // now" button never sends this, so it keeps syncing every week unchanged.
+  const weekRaw = formData.get("week") as string | null;
+  const week = weekRaw ? Number(weekRaw) : undefined;
+
   const { data: appSettings } = await supabase
     .from("app_settings")
     .select("current_season")
     .single();
 
   const { data, error } = await supabase.functions.invoke("cfbd-sync", {
-    body: { year: appSettings?.current_season, triggered_by: user.id },
+    body: { year: appSettings?.current_season, triggered_by: user.id, ...(week ? { week } : {}) },
   });
 
   revalidatePath("/admin/system");

@@ -66,18 +66,26 @@ function lockedSpreadOnSelect(currentOverride: number | null, homeSpread: number
   return currentOverride ?? homeSpread;
 }
 
+// Stage-then-commit: the submitted set of checked game IDs is treated as the
+// *complete* intended pool for the week, not an incremental "add these" —
+// any currently-selected game whose id isn't in the submitted set gets
+// excluded, and every id that is gets included (idempotent if it already
+// was). This is the one action in the Pick'em week-setup flow that actually
+// writes pickem_selected/pickem_spread_override; the per-game checkboxes on
+// the page are local staging only until this runs.
 export async function bulkSetPickemSelection(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 
   const scheduleId = formData.get("scheduleId") as string;
-  const selected = formData.get("selected") === "true";
   if (!scheduleId) {
     redirect("/admin/pickem/week?error=" + encodeURIComponent("Missing week reference"));
   }
 
+  const checkedIds = new Set(formData.getAll("gameIds").map(String));
+
   const { data: weekGames, error: fetchErr } = await supabase
     .from("games")
-    .select("id, home_spread, pickem_spread_override")
+    .select("id, home_spread, pickem_spread_override, pickem_selected")
     .eq("schedule_id", scheduleId);
   if (fetchErr) {
     redirect(
@@ -85,39 +93,43 @@ export async function bulkSetPickemSelection(formData: FormData) {
     );
   }
 
-  let affected = 0;
+  let added = 0;
+  let removed = 0;
   for (const g of weekGames ?? []) {
-    // Clearing never touches pickem_spread_override — whether a game is in
-    // the pool and whether its spread is locked are separate concerns.
-    const nextOverride = selected ? lockedSpreadOnSelect(g.pickem_spread_override, g.home_spread) : g.pickem_spread_override;
+    const shouldBeSelected = checkedIds.has(g.id);
+    // Excluding never touches pickem_spread_override — whether a game is in
+    // the pool and whether its spread is locked are separate concerns, same
+    // as the old Clear All behavior.
+    const nextOverride = shouldBeSelected
+      ? lockedSpreadOnSelect(g.pickem_spread_override, g.home_spread)
+      : g.pickem_spread_override;
 
     const { error } = await supabase
       .from("games")
-      .update({ pickem_selected: selected, pickem_spread_override: nextOverride })
+      .update({ pickem_selected: shouldBeSelected, pickem_spread_override: nextOverride })
       .eq("id", g.id);
     if (error) {
       redirect(
         `/admin/pickem/week?schedule_id=${scheduleId}&error=` + encodeURIComponent(error.message)
       );
     }
-    affected++;
+    if (shouldBeSelected && !g.pickem_selected) added++;
+    if (!shouldBeSelected && g.pickem_selected) removed++;
   }
 
   await logAdminAction(
     supabase,
     user.id,
-    selected ? "bulk_select_pickem_games" : "bulk_clear_pickem_games",
+    "bulk_set_pickem_selection",
     "games",
     scheduleId,
     {},
-    { scheduleId, selected, gamesAffected: affected },
-    selected
-      ? `Selected all ${affected} game(s) for Pick'em this week — any unset spread was locked to its current CFBD value`
-      : `Cleared Pick'em selection for all ${affected} game(s) this week — spread overrides left untouched`
+    { scheduleId, added, removed, totalSelected: checkedIds.size },
+    `Pick'em week setup — added ${added} game(s), removed ${removed} game(s); any newly-added game with no prior override was locked to its current CFBD spread`
   );
 
   revalidatePath("/admin/pickem/week");
-  redirect(`/admin/pickem/week?schedule_id=${scheduleId}&saved=1`);
+  redirect(`/admin/pickem/week?schedule_id=${scheduleId}&added=${added}&removed=${removed}`);
 }
 
 export async function clearPickemSpreadOverride(formData: FormData) {
