@@ -178,12 +178,18 @@ export default async function AdminPickemWeekPage({
               const hasOverride = g.pickem_spread_override !== null;
               const effectiveSpread = g.pickem_spread_override ?? g.home_spread;
               return (
-                <div key={g.id} className="px-4 py-3">
-                  <form action={updatePickemGame} className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div
+                  key={g.id}
+                  className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-x-4 sm:gap-y-1"
+                >
+                  {/* display:contents so the single save form's children act as
+                      direct grid items of the row above, instead of the form
+                      itself boxing them into one grid cell. */}
+                  <form action={updatePickemGame} className="contents">
                     <input type="hidden" name="gameId" value={g.id} />
                     <input type="hidden" name="scheduleId" value={scheduleId} />
 
-                    <label className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 pt-0.5">
                       <input
                         type="checkbox"
                         name="pickemSelected"
@@ -193,58 +199,60 @@ export default async function AdminPickemWeekPage({
                       <span className="text-xs font-medium uppercase text-muted">Include</span>
                     </label>
 
-                    <GameMatchupLine
-                      home={{
-                        id: g.home_team.id,
-                        name: g.home_team.short_name || g.home_team.school_name,
-                        logo_url: g.home_team.logo_url,
-                      }}
-                      away={{
-                        id: g.away_team.id,
-                        name: g.away_team.short_name || g.away_team.school_name,
-                        logo_url: g.away_team.logo_url,
-                      }}
-                    />
+                    <div className="min-w-0">
+                      <GameMatchupLine
+                        home={{
+                          id: g.home_team.id,
+                          name: g.home_team.short_name || g.home_team.school_name,
+                          logo_url: g.home_team.logo_url,
+                        }}
+                        away={{
+                          id: g.away_team.id,
+                          name: g.away_team.short_name || g.away_team.school_name,
+                          logo_url: g.away_team.logo_url,
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-muted">{formatKickoff(g.kickoff_time)}</p>
+                    </div>
 
-                    <span className="text-xs text-muted">{formatKickoff(g.kickoff_time)}</span>
-
-                    <div className="ml-auto flex items-center gap-2">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs font-medium uppercase text-muted">Home spread</span>
+                    <div className="col-span-2 flex flex-col items-end gap-1.5 sm:col-span-1">
+                      <div className="flex items-center gap-2">
                         <input
                           type="number"
                           step="0.5"
                           name="spreadOverride"
                           required
                           defaultValue={effectiveSpread ?? ""}
-                          className="w-24 rounded-md border border-edge bg-app px-2 py-1 text-sm text-ink"
+                          className="w-20 rounded-md border border-edge bg-app px-2 py-1 text-right text-sm text-ink"
                         />
-                      </label>
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${
-                          hasOverride ? "bg-gold-500/10 text-gold-400" : "bg-surface-hover text-muted"
-                        }`}
-                      >
-                        {hasOverride ? "Override active" : "CFBD synced"}
-                      </span>
-                      <span className="text-xs text-muted">CFBD: {g.home_spread ?? "—"}</span>
-                      <button
-                        type="submit"
-                        className="rounded-md bg-gold-500 px-3 py-1.5 text-xs font-semibold text-app transition hover:bg-gold-600"
-                      >
-                        Save
-                      </button>
+                        <button
+                          type="submit"
+                          className="rounded-md bg-gold-500 px-3 py-1.5 text-xs font-semibold text-app transition hover:bg-gold-600"
+                        >
+                          Save
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 whitespace-nowrap text-xs">
+                        <span
+                          className={`rounded px-2 py-0.5 font-medium ${
+                            hasOverride ? "bg-gold-500/10 text-gold-400" : "bg-surface-hover text-muted"
+                          }`}
+                        >
+                          {hasOverride ? "Override active" : "CFBD synced"}
+                        </span>
+                        <span className="text-muted">CFBD: {g.home_spread ?? "—"}</span>
+                        {hasOverride && (
+                          <button
+                            type="submit"
+                            formAction={clearPickemSpreadOverride}
+                            className="font-medium text-gold-400 hover:underline"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </form>
-                  {hasOverride && (
-                    <form action={clearPickemSpreadOverride} className="mt-1">
-                      <input type="hidden" name="gameId" value={g.id} />
-                      <input type="hidden" name="scheduleId" value={scheduleId} />
-                      <button type="submit" className="text-xs font-medium text-gold-400 hover:underline">
-                        Clear override
-                      </button>
-                    </form>
-                  )}
                 </div>
               );
             })}
