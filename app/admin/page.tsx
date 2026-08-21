@@ -5,6 +5,7 @@ const QUICK_LINKS = [
   { href: "/admin/survivor/results", label: "Enter Results", desc: "Record winners, run eliminations" },
   { href: "/admin/survivor/entries", label: "Entries", desc: "Full entry list, dues, CSV export" },
   { href: "/admin/survivor/bonus", label: "Bonus Weeks", desc: "Bonus week usage summary" },
+  { href: "/admin/pickem/week", label: "Pick'em Week Setup", desc: "Select games, set spread overrides" },
   { href: "/admin/users", label: "Users", desc: "All registered users, admin flags" },
   { href: "/admin/email", label: "Email", desc: "Send test / manual emails" },
   { href: "/admin/system", label: "System", desc: "Sync logs, manual sync trigger" },
