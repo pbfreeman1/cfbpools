@@ -129,3 +129,52 @@ export async function updatePickemPick(
   }
   return { ok: true };
 }
+
+export type LeaderboardRow = {
+  entryId: string;
+  entryName: string;
+  wins: number;
+  losses: number;
+  pushes: number;
+  effectiveLosses: number;
+  pending: number;
+  isOwn: boolean;
+  rank: number;
+};
+
+// Thin wrapper around get_pickem_leaderboard(p_schedule_id) — rank, sort
+// order, and the eCount-vs-own-entries windowing are all computed in SQL.
+// Rows come back pre-ordered by rank; render them as-is, don't re-sort or
+// re-window here.
+export async function getPickemLeaderboard(scheduleId: string): Promise<LeaderboardRow[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_pickem_leaderboard", {
+    p_schedule_id: scheduleId,
+  });
+
+  if (error || !data) return [];
+
+  return (
+    data as {
+      entry_id: string;
+      entry_name: string;
+      wins: number;
+      losses: number;
+      pushes: number;
+      effective_losses: number;
+      pending: number;
+      is_own: boolean;
+      rank: number;
+    }[]
+  ).map((r) => ({
+    entryId: r.entry_id,
+    entryName: r.entry_name,
+    wins: r.wins,
+    losses: r.losses,
+    pushes: r.pushes,
+    effectiveLosses: r.effective_losses,
+    pending: r.pending,
+    isOwn: r.is_own,
+    rank: r.rank,
+  }));
+}
