@@ -81,7 +81,7 @@ export async function createPickemEntry(
   return { ok: true, entryId: data.id as string };
 }
 
-export type SavePickemPickResult = { ok: true } | { ok: false; error: string };
+export type SavePickemPickResult = { ok: true; pickId: string } | { ok: false; error: string };
 
 export async function savePickemPick(
   entryId: string,
@@ -89,15 +89,42 @@ export async function savePickemPick(
   teamId: string
 ): Promise<SavePickemPickResult> {
   const supabase = await createClient();
-  const { error } = await supabase.from("pickem_picks").insert({
-    entry_id: entryId,
-    game_id: gameId,
-    team_id: teamId,
-  });
+  const { data, error } = await supabase
+    .from("pickem_picks")
+    .insert({ entry_id: entryId, game_id: gameId, team_id: teamId })
+    .select("id")
+    .single();
 
-  if (error) {
+  if (error || !data) {
     // validate_pickem_pick() messages (e.g. "You cannot pick a game that has
     // already started") are already user-friendly — surface them as-is.
+    return { ok: false, error: error?.message ?? "Something went wrong saving that pick." };
+  }
+  return { ok: true, pickId: data.id as string };
+}
+
+export type UpdatePickemPickResult = { ok: true } | { ok: false; error: string };
+
+// Updates an existing pickem_picks row in place — including reassigning it
+// to a different game_id, which is how a pick "moves" from one game to
+// another on the edit page (see EditEntryForm.tsx). Regular users have no
+// DELETE grant on pickem_picks (only admins do, per RLS), so this
+// reassign-in-place approach isn't just a style choice — a delete+reinsert
+// swap would fail outright for a normal user.
+export async function updatePickemPick(
+  entryId: string,
+  pickId: string,
+  gameId: string,
+  teamId: string
+): Promise<UpdatePickemPickResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("pickem_picks")
+    .update({ game_id: gameId, team_id: teamId })
+    .eq("id", pickId)
+    .eq("entry_id", entryId);
+
+  if (error) {
     return { ok: false, error: error.message };
   }
   return { ok: true };

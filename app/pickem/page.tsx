@@ -170,7 +170,7 @@ export default async function PickemHomePage() {
                       return (
                         <Link
                           key={entry.id}
-                          href={`/pickem/${entry.id}`}
+                          href={`/pickem/entries/${entry.id}/edit`}
                           className="flex items-center justify-between gap-3 rounded-lg border border-edge bg-surface px-4 py-3 transition hover:border-pickem-500/50 hover:bg-surface-hover"
                         >
                           <div className="min-w-0">
