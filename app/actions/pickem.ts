@@ -1,0 +1,104 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+
+// Escapes ilike wildcard characters so a literal "_" or "%" typed into an
+// entry name can't be misread as a pattern by Postgres's ilike.
+function escapeIlike(value: string): string {
+  return value.replace(/[%_\\]/g, (m) => `\\${m}`);
+}
+
+export async function checkPickemEntryNameAvailable(
+  scheduleId: string,
+  entryName: string
+): Promise<boolean> {
+  const trimmed = entryName.trim();
+  if (!trimmed) return true;
+
+  const supabase = await createClient();
+  // Live pre-check only — the DB's unique index on
+  // (schedule_id, lower(btrim(entry_name))) is the authoritative backstop,
+  // enforced again on insert in createPickemEntry below.
+  const { data } = await supabase
+    .from("pickem_entries")
+    .select("id")
+    .eq("schedule_id", scheduleId)
+    .ilike("entry_name", escapeIlike(trimmed))
+    .limit(1);
+
+  return !(data && data.length > 0);
+}
+
+export type CreatePickemEntryResult =
+  | { ok: true; entryId: string }
+  | { ok: false; error: string; field?: "entryName" };
+
+export async function createPickemEntry(
+  scheduleId: string,
+  entryName: string
+): Promise<CreatePickemEntryResult> {
+  const trimmed = entryName.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Give your entry a name first.", field: "entryName" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You must be logged in to create an entry." };
+  }
+
+  const { data, error } = await supabase
+    .from("pickem_entries")
+    .insert({
+      schedule_id: scheduleId,
+      user_id: user.id,
+      entrant_email: user.email ?? "",
+      entry_name: trimmed,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) {
+    // 23505 = unique_violation (pickem_entries_unique_name_per_week).
+    if (error?.code === "23505") {
+      return {
+        ok: false,
+        error: "That entry name is already taken for this week — try a different one.",
+        field: "entryName",
+      };
+    }
+    // P0001 = raise_exception, e.g. prepare_pickem_entry()'s "entries closed"
+    // check — its message is already user-friendly, so surface it directly.
+    if (error?.code === "P0001") {
+      return { ok: false, error: error.message };
+    }
+    return { ok: false, error: error?.message ?? "Something went wrong creating your entry." };
+  }
+
+  return { ok: true, entryId: data.id as string };
+}
+
+export type SavePickemPickResult = { ok: true } | { ok: false; error: string };
+
+export async function savePickemPick(
+  entryId: string,
+  gameId: string,
+  teamId: string
+): Promise<SavePickemPickResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("pickem_picks").insert({
+    entry_id: entryId,
+    game_id: gameId,
+    team_id: teamId,
+  });
+
+  if (error) {
+    // validate_pickem_pick() messages (e.g. "You cannot pick a game that has
+    // already started") are already user-friendly — surface them as-is.
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}

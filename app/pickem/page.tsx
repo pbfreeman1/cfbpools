@@ -156,7 +156,7 @@ export default async function PickemHomePage() {
                 </div>
               ) : (
                 <Link
-                  href={`/pickem/new?schedule_id=${week.id}`}
+                  href={`/pickem/entries/new?schedule_id=${week.id}`}
                   className="mb-6 block rounded-lg bg-pickem-500 px-4 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-ink shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600"
                 >
                   + Create New Entry
