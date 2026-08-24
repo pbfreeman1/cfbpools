@@ -25,6 +25,11 @@ export type GameOption = {
 type NameCheckStatus = "idle" | "checking" | "available" | "taken";
 type FailedGame = { gameId: string; message: string };
 
+// Fixed rule of the pool itself ("Pick 6 winners against the spread"),
+// independent of how many games the admin curates into a given week's pool
+// (that count is genuinely variable — see GameOption[] / games.length).
+const PICKS_REQUIRED = 6;
+
 function favoriteSummary(game: GameOption): string | null {
   const spread = game.effectiveSpread;
   if (spread === null) return null;
@@ -61,12 +66,19 @@ export default function NewEntryForm({
     () => games.filter((g) => new Date(g.kickoffTime).getTime() > now),
     [games, now]
   );
-  const requiredGames = useMemo(
-    () => unlockedGames.filter((g) => !skippedGameIds.has(g.id)),
-    [unlockedGames, skippedGameIds]
+  // Defensive floor for the rare case entries are somehow still open with
+  // fewer than 6 unlocked games left (the entry-close trigger is designed to
+  // prevent this) — without it, hitting exactly 6 would be unreachable and
+  // the submit button would hang disabled forever. Doesn't change what's
+  // displayed ("of 6"), only what the gate actually requires.
+  const pickTarget = Math.min(PICKS_REQUIRED, unlockedGames.length);
+
+  const pickedGameIds = useMemo(
+    () => new Set(Object.entries(picks).filter(([, teamId]) => teamId).map(([gameId]) => gameId)),
+    [picks]
   );
-  const pickedCount = requiredGames.filter((g) => picks[g.id]).length;
-  const allPicked = requiredGames.length > 0 && pickedCount === requiredGames.length;
+  const pickedCount = pickedGameIds.size;
+  const allPicked = pickTarget > 0 && pickedCount === pickTarget;
 
   // Debounced live uniqueness check — the unique index on
   // (schedule_id, lower(btrim(entry_name))) is the real backstop, checked
@@ -92,20 +104,29 @@ export default function NewEntryForm({
   }, [entryName, scheduleId, entryId]);
 
   function selectTeam(gameId: string, teamId: string) {
-    setPicks((prev) => ({
-      ...prev,
-      [gameId]: prev[gameId] === teamId ? "" : teamId,
-    }));
+    setPicks((prev) => {
+      const alreadyPickedThisGame = Boolean(prev[gameId]);
+      const currentCount = Object.values(prev).filter(Boolean).length;
+      // At the 6-pick cap, block picking a *new* game — but switching teams
+      // within, or deselecting, a game that's already one of the 6 is always
+      // allowed (deselecting frees the slot for a different game).
+      if (!alreadyPickedThisGame && currentCount >= pickTarget) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [gameId]: prev[gameId] === teamId ? "" : teamId,
+      };
+    });
   }
 
   // Inserts picks one at a time (not a single batch insert) so a failure —
   // e.g. a game kicking off mid-submit — can be attributed to exactly one
   // game, with everything before it already durably saved.
   async function processPicks(entryIdToUse: string, alreadySaved: Set<string>): Promise<boolean> {
-    const remaining = requiredGames.filter((g) => !alreadySaved.has(g.id));
+    const remaining = games.filter((g) => picks[g.id] && !alreadySaved.has(g.id));
     for (const game of remaining) {
       const teamId = picks[game.id];
-      if (!teamId) continue;
       const result = await savePickemPick(entryIdToUse, game.id, teamId);
       if (!result.ok) {
         setFailedGame({ gameId: game.id, message: result.error });
@@ -142,7 +163,14 @@ export default function NewEntryForm({
 
   function skipFailedGame() {
     if (!failedGame) return;
-    setSkippedGameIds((prev) => new Set(prev).add(failedGame.gameId));
+    const gameId = failedGame.gameId;
+    setSkippedGameIds((prev) => new Set(prev).add(gameId));
+    // Clear the pick so this game's slot actually frees up for a different one.
+    setPicks((prev) => {
+      const next = { ...prev };
+      delete next[gameId];
+      return next;
+    });
     setFailedGame(null);
   }
 
@@ -199,11 +227,14 @@ export default function NewEntryForm({
         {entryNameError && <p className="mt-1 text-xs text-dead">{entryNameError}</p>}
       </div>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">This week&apos;s games</h2>
-        <span className="font-data text-sm font-semibold text-pickem-400">
-          {pickedCount} of {games.length} picked
-        </span>
+      <div>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">This week&apos;s games</h2>
+          <span className="font-data text-sm font-semibold text-pickem-400">
+            {pickedCount} of {PICKS_REQUIRED} picked
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-muted">Choose any 6 of the games below.</p>
       </div>
 
       {games.length === 0 ? (
@@ -215,7 +246,11 @@ export default function NewEntryForm({
             const isSkipped = skippedGameIds.has(game.id);
             const isSaved = savedGameIds.has(game.id);
             const isFailed = failedGame?.gameId === game.id;
-            const teamsDisabled = isLocked || isSaved || isSkipped;
+            // Once 6 games have a pick, every *other* game's buttons disable —
+            // but a game that's already one of the 6 stays interactive so its
+            // own pick can still be switched or cleared.
+            const capBlocksThisGame = pickedCount >= pickTarget && !pickedGameIds.has(game.id);
+            const teamsDisabled = isLocked || isSaved || isSkipped || capBlocksThisGame;
             const summary = favoriteSummary(game);
             const selectedTeamId = picks[game.id];
 
@@ -315,7 +350,7 @@ export default function NewEntryForm({
         <div className="mx-auto flex max-w-sm items-center justify-between gap-3 sm:max-w-xl md:max-w-3xl">
           <span className="truncate text-xs text-muted">
             {entryName.trim() ? `"${entryName.trim()}"` : "Name your entry"} — {pickedCount}/
-            {games.length} picked
+            {PICKS_REQUIRED} picked
           </span>
           <button
             type="button"

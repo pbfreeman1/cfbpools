@@ -18,33 +18,25 @@ export default async function PickemHomePage() {
   let week: { id: string; season: number; week_number: number; label: string | null } | null = null;
   let ecount = 0;
   let openGamesCount = 0;
-  let totalSelectedGames = 0;
 
   if (scheduleId) {
-    const [{ data: weekData }, { data: ecountRow }, { count: openCount }, { count: selectedCount }] =
-      await Promise.all([
-        supabase.from("schedule").select("id, season, week_number, label").eq("id", scheduleId).single(),
-        supabase.from("pickem_week_ecount").select("ecount").eq("schedule_id", scheduleId).maybeSingle(),
-        // Mirrors prepare_pickem_entry()'s own "fewer than 6 games remaining
-        // closes entry" check exactly — same table, same three filters — so
-        // this can never drift from what the DB trigger actually enforces.
-        supabase
-          .from("games")
-          .select("id", { count: "exact", head: true })
-          .eq("schedule_id", scheduleId)
-          .eq("pickem_selected", true)
-          .eq("status", "scheduled")
-          .gt("kickoff_time", new Date().toISOString()),
-        supabase
-          .from("games")
-          .select("id", { count: "exact", head: true })
-          .eq("schedule_id", scheduleId)
-          .eq("pickem_selected", true),
-      ]);
+    const [{ data: weekData }, { data: ecountRow }, { count: openCount }] = await Promise.all([
+      supabase.from("schedule").select("id, season, week_number, label").eq("id", scheduleId).single(),
+      supabase.from("pickem_week_ecount").select("ecount").eq("schedule_id", scheduleId).maybeSingle(),
+      // Mirrors prepare_pickem_entry()'s own "fewer than 6 games remaining
+      // closes entry" check exactly — same table, same three filters — so
+      // this can never drift from what the DB trigger actually enforces.
+      supabase
+        .from("games")
+        .select("id", { count: "exact", head: true })
+        .eq("schedule_id", scheduleId)
+        .eq("pickem_selected", true)
+        .eq("status", "scheduled")
+        .gt("kickoff_time", new Date().toISOString()),
+    ]);
     week = weekData;
     ecount = ecountRow?.ecount ?? 0;
     openGamesCount = openCount ?? 0;
-    totalSelectedGames = selectedCount ?? 0;
   }
 
   const closed = openGamesCount < 6;
@@ -186,7 +178,7 @@ export default async function PickemHomePage() {
                             <p className="text-xs text-muted">Entered {formatKickoff(entry.created_at)}</p>
                           </div>
                           <span className="flex-shrink-0 font-data text-sm font-semibold text-pickem-400">
-                            {picksMade}/{totalSelectedGames || 6}
+                            {picksMade}/6
                           </span>
                         </Link>
                       );
