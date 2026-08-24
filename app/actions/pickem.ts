@@ -146,13 +146,18 @@ export type LeaderboardRow = {
 // order, and the eCount-vs-own-entries windowing are all computed in SQL.
 // Rows come back pre-ordered by rank; render them as-is, don't re-sort or
 // re-window here.
-export async function getPickemLeaderboard(scheduleId: string): Promise<LeaderboardRow[]> {
+//
+// Returns null on a failed fetch, distinct from an empty array (a real,
+// successfully-fetched board with zero entries) — callers that poll for
+// updates (LeaderboardTable) rely on this distinction to avoid clobbering
+// already-good data with a transient RPC failure.
+export async function getPickemLeaderboard(scheduleId: string): Promise<LeaderboardRow[] | null> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_pickem_leaderboard", {
     p_schedule_id: scheduleId,
   });
 
-  if (error || !data) return [];
+  if (error || !data) return null;
 
   return (
     data as {

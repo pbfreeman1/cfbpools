@@ -33,6 +33,12 @@ export default async function PickemLeaderboardPage({
     getPickemLeaderboard(scheduleId),
   ]);
 
+  // A failed fetch on first load has nothing to fall back to — empty is a
+  // reasonable default for a page that hasn't successfully loaded anything
+  // yet. The polling path in LeaderboardTable is where a failure actually
+  // matters, since there it would otherwise clobber already-good data.
+  const initialRows = rows ?? [];
+
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl">
       <Link href="/pickem" className="mb-4 inline-block text-sm text-pickem-400 hover:underline">
@@ -45,7 +51,7 @@ export default async function PickemLeaderboardPage({
         {week ? `Week ${week.week_number}${week.label ? ` — ${week.label}` : ""}` : ""}
       </p>
 
-      <LeaderboardTable scheduleId={scheduleId} initialRows={rows} />
+      <LeaderboardTable scheduleId={scheduleId} initialRows={initialRows} />
     </main>
   );
 }

@@ -34,6 +34,7 @@ export default function LeaderboardTable({
 }) {
   const [rows, setRows] = useState(initialRows);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(new Date());
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const isFetching = useRef(false);
 
   useEffect(() => {
@@ -42,8 +43,20 @@ export default function LeaderboardTable({
       isFetching.current = true;
       try {
         const next = await getPickemLeaderboard(scheduleId);
-        setRows(next);
-        setLastUpdated(new Date());
+        if (next === null) {
+          // Transient failure — keep showing whatever was last successfully
+          // loaded rather than clobbering it with an empty board. Self-heals
+          // on the next successful poll.
+          setRefreshFailed(true);
+        } else {
+          setRows(next);
+          setLastUpdated(new Date());
+          setRefreshFailed(false);
+        }
+      } catch {
+        // The server action call itself failed (e.g. offline) rather than
+        // returning a handled error — same "keep the stale data" treatment.
+        setRefreshFailed(true);
       } finally {
         isFetching.current = false;
       }
@@ -58,7 +71,10 @@ export default function LeaderboardTable({
           {rows.length} entr{rows.length === 1 ? "y" : "ies"}
         </span>
         {lastUpdated && (
-          <span className="text-xs text-muted">Updated {formatTimeOnly(lastUpdated)}</span>
+          <span className="text-xs text-muted">
+            Updated {formatTimeOnly(lastUpdated)}
+            {refreshFailed && <span className="text-dead"> — couldn&apos;t refresh</span>}
+          </span>
         )}
       </div>
 
