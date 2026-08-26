@@ -2,25 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { checkPickemEntryNameAvailable, createPickemEntry, savePickemPick } from "@/app/actions/pickem";
-import { formatScheduleRow } from "@/lib/formatDate";
-import { isReadableOnDark } from "@/lib/color";
+import { checkPickemEntryNameAvailable, createPickemEntry, savePickemPick, sendPickemEntryEmails } from "@/app/actions/pickem";
+import { GameCard, teamSpreadLabel, type GameOption } from "@/app/pickem/components/GameCard";
+import { PicksTray, type PickChip } from "@/app/pickem/components/PicksTray";
 
-export type GameTeam = {
-  id: string;
-  name: string;
-  logoUrl: string | null;
-  color: string | null;
-};
-
-export type GameOption = {
-  id: string;
-  kickoffTime: string;
-  venue: string | null;
-  effectiveSpread: number | null;
-  homeTeam: GameTeam;
-  awayTeam: GameTeam;
-};
+export type { GameTeam, GameOption } from "@/app/pickem/components/GameCard";
 
 type NameCheckStatus = "idle" | "checking" | "available" | "taken";
 type FailedGame = { gameId: string; message: string };
@@ -29,14 +15,6 @@ type FailedGame = { gameId: string; message: string };
 // independent of how many games the admin curates into a given week's pool
 // (that count is genuinely variable — see GameOption[] / games.length).
 const PICKS_REQUIRED = 6;
-
-function favoriteSummary(game: GameOption): string | null {
-  const spread = game.effectiveSpread;
-  if (spread === null) return null;
-  if (spread === 0) return "Pick'em (even)";
-  const favored = spread < 0 ? game.homeTeam : game.awayTeam;
-  return `${favored.name} -${Math.abs(spread)}`;
-}
 
 export default function NewEntryForm({
   scheduleId,
@@ -48,6 +26,7 @@ export default function NewEntryForm({
   const [entryName, setEntryName] = useState("");
   const [nameCheck, setNameCheck] = useState<NameCheckStatus>("idle");
   const [entryNameError, setEntryNameError] = useState<string | null>(null);
+  const [stage, setStage] = useState<"name" | "picks">("name");
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [entryId, setEntryId] = useState<string | null>(null);
   const [savedGameIds, setSavedGameIds] = useState<Set<string>>(new Set());
@@ -79,6 +58,26 @@ export default function NewEntryForm({
   );
   const pickedCount = pickedGameIds.size;
   const allPicked = pickTarget > 0 && pickedCount === pickTarget;
+
+  const gamesById = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
+  const trayChips: PickChip[] = useMemo(
+    () =>
+      Object.entries(picks)
+        .filter(([, teamId]) => teamId)
+        .map(([gameId, teamId]) => {
+          const game = gamesById.get(gameId);
+          if (!game) return null;
+          const team = game.homeTeam.id === teamId ? game.homeTeam : game.awayTeam;
+          return {
+            gameId,
+            logoUrl: team.logoUrl,
+            teamName: team.name,
+            spreadLabel: teamSpreadLabel(game, teamId),
+          };
+        })
+        .filter((c): c is PickChip => c !== null),
+    [picks, gamesById]
+  );
 
   // Debounced live uniqueness check — the unique index on
   // (schedule_id, lower(btrim(entry_name))) is the real backstop, checked
@@ -158,7 +157,12 @@ export default function NewEntryForm({
 
     const success = await processPicks(currentEntryId, new Set(savedGameIds));
     setSubmitting(false);
-    if (success) setAllSaved(true);
+    if (success) {
+      setAllSaved(true);
+      // Fire-and-forget — never blocks the confirmation screen on email
+      // delivery, matching sendEmail()'s own "never throws" contract.
+      sendPickemEntryEmails(currentEntryId).catch(() => {});
+    }
   }
 
   function skipFailedGame() {
@@ -176,11 +180,11 @@ export default function NewEntryForm({
 
   if (allSaved) {
     return (
-      <div className="rounded-lg border border-alive/40 bg-alive/5 p-6 text-center">
-        <p className="font-display text-lg font-bold uppercase tracking-wide text-alive">
+      <div className="rounded-lg border border-alive/40 bg-alive/5 p-6">
+        <p className="text-center font-display text-lg font-bold uppercase tracking-wide text-alive">
           You&apos;re in!
         </p>
-        <p className="mt-2 text-sm text-muted">
+        <p className="mt-2 text-center text-sm text-muted">
           &quot;{entryName.trim()}&quot; is entered for this week with {savedGameIds.size} pick
           {savedGameIds.size === 1 ? "" : "s"} saved
           {skippedGameIds.size > 0
@@ -188,9 +192,21 @@ export default function NewEntryForm({
             : ""}
           .
         </p>
+
+        <div className="mt-5 flex flex-col gap-2 rounded-md border border-edge bg-app px-4 py-3 text-sm text-ink">
+          <p>
+            <span className="font-semibold">$10 entry fee</span> via Venmo to{" "}
+            <span className="font-semibold">@brentfreeman1</span>.
+          </p>
+          <p className="text-muted">Enter as many times as you&apos;d like — entries are unlimited.</p>
+          <p className="text-muted">
+            The leaderboard and live scores will update on the Pick&apos;em page as games kick off.
+          </p>
+        </div>
+
         <Link
           href="/pickem"
-          className="mt-4 inline-block rounded-md bg-pickem-500 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-pickem-600"
+          className="mt-4 block rounded-md bg-pickem-500 px-4 py-2 text-center text-sm font-semibold text-app transition hover:bg-pickem-600"
         >
           Back to Pick&apos;em
         </Link>
@@ -198,33 +214,60 @@ export default function NewEntryForm({
     );
   }
 
+  if (stage === "name") {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <label htmlFor="entryName" className="mb-1 block text-sm font-medium text-ink">
+            Entry name
+          </label>
+          <input
+            id="entryName"
+            type="text"
+            value={entryName}
+            onChange={(e) => setEntryName(e.target.value)}
+            placeholder="e.g. The Comeback Kids"
+            className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink placeholder:text-muted focus:border-pickem-500 focus:outline-none focus:ring-1 focus:ring-pickem-500"
+          />
+          {entryName.trim() && (
+            <p
+              className={`mt-1 text-xs ${
+                nameCheck === "taken" ? "text-dead" : nameCheck === "available" ? "text-alive" : "text-muted"
+              }`}
+            >
+              {nameCheck === "checking" && "Checking availability…"}
+              {nameCheck === "available" && "Available"}
+              {nameCheck === "taken" && "That name is already taken for this week."}
+            </p>
+          )}
+          {entryNameError && <p className="mt-1 text-xs text-dead">{entryNameError}</p>}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setStage("picks")}
+          disabled={!entryName.trim() || nameCheck === "taken"}
+          className="rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Continue
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-6 pb-28">
-      <div>
-        <label htmlFor="entryName" className="mb-1 block text-sm font-medium text-ink">
-          Entry name
-        </label>
-        <input
-          id="entryName"
-          type="text"
-          value={entryName}
-          onChange={(e) => setEntryName(e.target.value)}
-          disabled={Boolean(entryId)}
-          placeholder="e.g. The Comeback Kids"
-          className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink placeholder:text-muted focus:border-pickem-500 focus:outline-none focus:ring-1 focus:ring-pickem-500 disabled:opacity-60"
-        />
-        {!entryId && entryName.trim() && (
-          <p
-            className={`mt-1 text-xs ${
-              nameCheck === "taken" ? "text-dead" : nameCheck === "available" ? "text-alive" : "text-muted"
-            }`}
+    <div className="flex flex-col gap-6 pb-32">
+      <div className="flex items-center justify-between rounded-md border border-edge bg-surface px-3 py-2.5">
+        <span className="truncate text-sm font-medium text-ink">{entryName.trim()}</span>
+        {!entryId && (
+          <button
+            type="button"
+            onClick={() => setStage("name")}
+            className="flex-shrink-0 text-xs font-medium text-pickem-400 hover:underline"
           >
-            {nameCheck === "checking" && "Checking availability…"}
-            {nameCheck === "available" && "Available"}
-            {nameCheck === "taken" && "That name is already taken for this week."}
-          </p>
+            Edit name
+          </button>
         )}
-        {entryNameError && <p className="mt-1 text-xs text-dead">{entryNameError}</p>}
       </div>
 
       <div>
@@ -251,94 +294,32 @@ export default function NewEntryForm({
             // own pick can still be switched or cleared.
             const capBlocksThisGame = pickedCount >= pickTarget && !pickedGameIds.has(game.id);
             const teamsDisabled = isLocked || isSaved || isSkipped || capBlocksThisGame;
-            const summary = favoriteSummary(game);
-            const selectedTeamId = picks[game.id];
 
             return (
-              <div
+              <GameCard
                 key={game.id}
-                className={`rounded-lg border p-3 ${
+                game={game}
+                now={now}
+                selectedTeamId={picks[game.id] || undefined}
+                disabled={teamsDisabled}
+                onSelectTeam={(teamId) => selectTeam(game.id, teamId)}
+                variant={isFailed ? "failed" : isSaved ? "saved" : isSkipped ? "skipped" : "default"}
+                badges={[
+                  ...(isSaved ? [{ label: "Saved", tone: "success" as const }] : []),
+                  ...(isSkipped ? [{ label: "Skipped", tone: "neutral" as const }] : []),
+                ]}
+                error={
                   isFailed
-                    ? "border-dead"
-                    : isSaved
-                      ? "border-alive/40 bg-alive/5"
-                      : isSkipped
-                        ? "border-edge bg-surface-hover opacity-60"
-                        : "border-edge bg-surface"
-                }`}
-              >
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
-                  <span>
-                    {formatScheduleRow(game.kickoffTime)}
-                    {game.venue ? ` · ${game.venue}` : ""}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {summary && <span className="font-data text-ink">{summary}</span>}
-                    {isLocked && !isSaved && (
-                      <span className="rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">
-                        Locked
-                      </span>
-                    )}
-                    {isSaved && (
-                      <span className="rounded bg-alive/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-alive">
-                        Saved
-                      </span>
-                    )}
-                    {isSkipped && (
-                      <span className="rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">
-                        Skipped
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {[game.awayTeam, game.homeTeam].map((team) => {
-                    const selected = selectedTeamId === team.id;
-                    return (
-                      <button
-                        key={team.id}
-                        type="button"
-                        disabled={teamsDisabled}
-                        onClick={() => selectTeam(game.id, team.id)}
-                        style={
-                          !teamsDisabled && team.color && isReadableOnDark(team.color)
-                            ? { borderLeftColor: team.color, borderLeftWidth: "3px" }
-                            : undefined
-                        }
-                        className={
-                          "flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm transition " +
-                          (teamsDisabled
-                            ? "cursor-not-allowed border-edge opacity-60"
-                            : selected
-                              ? "border-pickem-500 bg-pickem-500/10 font-semibold text-pickem-400"
-                              : "border-edge text-ink hover:bg-surface-hover")
-                        }
-                      >
-                        {team.logoUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={team.logoUrl} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
-                        )}
-                        <span className="truncate">{team.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {isFailed && (
-                  <div className="mt-2 rounded-md bg-dead/10 px-3 py-2 text-xs text-dead">
-                    <p className="mb-1.5">{failedGame?.message}</p>
-                    <div className="flex gap-3">
-                      <button type="button" onClick={handleSubmit} className="font-semibold underline">
-                        Retry
-                      </button>
-                      <button type="button" onClick={skipFailedGame} className="font-semibold underline">
-                        Skip this game
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                    ? {
+                        message: failedGame!.message,
+                        actions: [
+                          { label: "Retry", onClick: handleSubmit },
+                          { label: "Skip this game", onClick: skipFailedGame },
+                        ],
+                      }
+                    : undefined
+                }
+              />
             );
           })}
         </div>
@@ -346,22 +327,13 @@ export default function NewEntryForm({
 
       {submitError && <p className="rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{submitError}</p>}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-surface px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.25)]">
-        <div className="mx-auto flex max-w-sm items-center justify-between gap-3 sm:max-w-xl md:max-w-3xl">
-          <span className="truncate text-xs text-muted">
-            {entryName.trim() ? `"${entryName.trim()}"` : "Name your entry"} — {pickedCount}/
-            {PICKS_REQUIRED} picked
-          </span>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting || !entryName.trim() || nameCheck === "taken" || !allPicked || Boolean(failedGame)}
-            className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "Saving…" : entryId ? "Save Remaining Picks" : "Create Entry & Save Picks"}
-          </button>
-        </div>
-      </div>
+      <PicksTray
+        label={`"${entryName.trim()}" — ${pickedCount}/${PICKS_REQUIRED} picked`}
+        chips={trayChips}
+        actionLabel={submitting ? "Saving…" : entryId ? "Save Remaining Picks" : "Create Entry & Save Picks"}
+        onAction={handleSubmit}
+        actionDisabled={submitting || nameCheck === "taken" || !allPicked || Boolean(failedGame)}
+      />
     </div>
   );
 }

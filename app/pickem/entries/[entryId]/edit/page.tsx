@@ -7,6 +7,7 @@ type TeamRef = {
   id: string;
   school_name: string;
   short_name: string | null;
+  mascot: string | null;
   logo_url: string | null;
   primary_color: string | null;
 };
@@ -77,8 +78,8 @@ export default async function EditPickemEntryPage({
       .from("games")
       .select(
         `id, kickoff_time, venue, home_spread, pickem_spread_override,
-         home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url, primary_color),
-         away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url, primary_color)`
+         home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, mascot, logo_url, primary_color),
+         away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, mascot, logo_url, primary_color)`
       )
       .eq("schedule_id", entry.schedule_id)
       .eq("pickem_selected", true)
@@ -96,12 +97,14 @@ export default async function EditPickemEntryPage({
     homeTeam: {
       id: g.home_team.id,
       name: g.home_team.short_name || g.home_team.school_name,
+      fullName: g.home_team.mascot ? `${g.home_team.school_name} ${g.home_team.mascot}` : g.home_team.school_name,
       logoUrl: g.home_team.logo_url,
       color: g.home_team.primary_color,
     },
     awayTeam: {
       id: g.away_team.id,
       name: g.away_team.short_name || g.away_team.school_name,
+      fullName: g.away_team.mascot ? `${g.away_team.school_name} ${g.away_team.mascot}` : g.away_team.school_name,
       logoUrl: g.away_team.logo_url,
       color: g.away_team.primary_color,
     },

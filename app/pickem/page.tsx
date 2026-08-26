@@ -100,16 +100,29 @@ export default async function PickemHomePage() {
               </span>
             </div>
             {week.label && <p className="mb-3 text-sm text-muted">{week.label}</p>}
-            <div className="grid grid-cols-2 gap-2 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
               <div className="rounded-md bg-app px-3 py-3">
                 <p className="font-data text-2xl font-bold text-ink">{ecount}</p>
-                <p className="mt-1 text-xs text-muted">eCount so far</p>
+                <p className="mt-1 text-xs text-muted">Week {week.week_number} Entry Count</p>
               </div>
               <div className="rounded-md bg-app px-3 py-3">
                 <p className="font-data text-2xl font-bold text-ink">{openGamesCount}</p>
-                <p className="mt-1 text-xs text-muted">games still open</p>
+                <p className="mt-1 text-xs text-muted">Games Still Open</p>
+              </div>
+              <div className="rounded-md bg-app px-3 py-3 sm:col-span-1 col-span-2">
+                <p className="font-data text-2xl font-bold text-ink">
+                  {new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  }).format(ecount * 10)}
+                </p>
+                <p className="mt-1 text-xs text-muted">Current Week {week.week_number} Tentative Pot*</p>
               </div>
             </div>
+            <p className="mt-3 text-[11px] text-muted">
+              *Pot total is tentative pending collection of all entry fees and subject to change.
+            </p>
             {closed && (
               <p className="mt-3 text-xs text-muted">
                 Fewer than 6 games remain before kickoff this week, so new entries and picks
@@ -118,12 +131,20 @@ export default async function PickemHomePage() {
             )}
           </div>
 
-          <Link
-            href={`/pickem/leaderboard?schedule_id=${week.id}`}
-            className="mb-6 block rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
-          >
-            View Leaderboard
-          </Link>
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={`/pickem/leaderboard?schedule_id=${week.id}`}
+              className="block flex-1 rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+            >
+              View Leaderboard
+            </Link>
+            <Link
+              href="/pickem/rules"
+              className="block flex-1 rounded-md border border-edge px-3 py-2.5 text-center text-sm font-medium text-ink transition hover:bg-surface-hover"
+            >
+              Pool Rules
+            </Link>
+          </div>
 
           {!user ? (
             <div className="rounded-lg border border-edge bg-surface p-4 text-center">

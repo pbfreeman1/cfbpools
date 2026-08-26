@@ -1,25 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { savePickemPick, updatePickemPick } from "@/app/actions/pickem";
-import { formatScheduleRow } from "@/lib/formatDate";
-import { isReadableOnDark } from "@/lib/color";
+import { savePickemPick, updatePickemPick, sendPickemEntryEmails } from "@/app/actions/pickem";
+import { GameCard, teamSpreadLabel, type GameOption } from "@/app/pickem/components/GameCard";
+import { PicksTray, type PickChip } from "@/app/pickem/components/PicksTray";
 
-export type GameTeam = {
-  id: string;
-  name: string;
-  logoUrl: string | null;
-  color: string | null;
-};
-
-export type GameOption = {
-  id: string;
-  kickoffTime: string;
-  venue: string | null;
-  effectiveSpread: number | null;
-  homeTeam: GameTeam;
-  awayTeam: GameTeam;
-};
+export type { GameTeam, GameOption } from "@/app/pickem/components/GameCard";
 
 export type ExistingPick = { id: string; gameId: string; teamId: string };
 
@@ -40,14 +26,6 @@ type PickRow = {
 };
 
 type FailedGame = { gameId: string; message: string };
-
-function favoriteSummary(game: GameOption): string | null {
-  const spread = game.effectiveSpread;
-  if (spread === null) return null;
-  if (spread === 0) return "Pick'em (even)";
-  const favored = spread < 0 ? game.homeTeam : game.awayTeam;
-  return `${favored.name} -${Math.abs(spread)}`;
-}
 
 export default function EditEntryForm({
   entryId,
@@ -100,6 +78,25 @@ export default function EditEntryForm({
 
   const pickedCount = rows.filter((r) => r.gameId !== null).length;
   const allPicked = pickTarget > 0 && pickedCount === pickTarget;
+
+  const gamesById = useMemo(() => new Map(games.map((g) => [g.id, g])), [games]);
+  const trayChips: PickChip[] = useMemo(
+    () =>
+      Object.entries(picksByGame)
+        .map(([gameId, teamId]) => {
+          const game = gamesById.get(gameId);
+          if (!game) return null;
+          const team = game.homeTeam.id === teamId ? game.homeTeam : game.awayTeam;
+          return {
+            gameId,
+            logoUrl: team.logoUrl,
+            teamName: team.name,
+            spreadLabel: teamSpreadLabel(game, teamId),
+          };
+        })
+        .filter((c): c is PickChip => c !== null),
+    [picksByGame, gamesById]
+  );
 
   function selectTeam(gameId: string, teamId: string) {
     if (saving) return;
@@ -188,10 +185,13 @@ export default function EditEntryForm({
 
     setSaving(false);
     setSavedBanner(true);
+    // Fresh confirmation of the entry's current picks — admin email is
+    // skipped here since that notification is specifically for new entries.
+    sendPickemEntryEmails(entryId, { includeAdmin: false }).catch(() => {});
   }
 
   return (
-    <div className="flex flex-col gap-6 pb-28">
+    <div className="flex flex-col gap-6 pb-32">
       <div>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">This week&apos;s games</h2>
@@ -218,80 +218,28 @@ export default function EditEntryForm({
             const isFailed = failedGame?.gameId === game.id;
             const capBlocksThisGame = pickedCount >= pickTarget && !picksByGame[game.id];
             const teamsDisabled = isLocked || saving || capBlocksThisGame;
-            const summary = favoriteSummary(game);
-            const selectedTeamId = picksByGame[game.id];
 
             return (
-              <div
+              <GameCard
                 key={game.id}
-                className={`rounded-lg border p-3 ${
-                  isFailed ? "border-dead" : "border-edge bg-surface"
-                }`}
-              >
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-1 text-xs text-muted">
-                  <span>
-                    {formatScheduleRow(game.kickoffTime)}
-                    {game.venue ? ` · ${game.venue}` : ""}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {summary && <span className="font-data text-ink">{summary}</span>}
-                    {isLocked && (
-                      <span className="rounded bg-edge px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted">
-                        Locked
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  {[game.awayTeam, game.homeTeam].map((team) => {
-                    const selected = selectedTeamId === team.id;
-                    return (
-                      <button
-                        key={team.id}
-                        type="button"
-                        disabled={teamsDisabled}
-                        onClick={() => selectTeam(game.id, team.id)}
-                        style={
-                          !teamsDisabled && team.color && isReadableOnDark(team.color)
-                            ? { borderLeftColor: team.color, borderLeftWidth: "3px" }
-                            : undefined
-                        }
-                        className={
-                          "flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm transition " +
-                          (teamsDisabled
-                            ? selected
-                              ? "cursor-not-allowed border-pickem-500 bg-pickem-500/10 text-pickem-300 opacity-80"
-                              : "cursor-not-allowed border-edge opacity-60"
-                            : selected
-                              ? "border-pickem-500 bg-pickem-500/10 font-semibold text-pickem-400"
-                              : "border-edge text-ink hover:bg-surface-hover")
-                        }
-                      >
-                        {team.logoUrl && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={team.logoUrl} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
-                        )}
-                        <span className="truncate">{team.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {isFailed && (
-                  <div className="mt-2 rounded-md bg-dead/10 px-3 py-2 text-xs text-dead">
-                    <p className="mb-1.5">{failedGame?.message}</p>
-                    <div className="flex gap-3">
-                      <button type="button" onClick={handleSave} className="font-semibold underline">
-                        Retry
-                      </button>
-                      <button type="button" onClick={revertFailedGame} className="font-semibold underline">
-                        Cancel this change
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                game={game}
+                now={now}
+                selectedTeamId={picksByGame[game.id] || undefined}
+                disabled={teamsDisabled}
+                onSelectTeam={(teamId) => selectTeam(game.id, teamId)}
+                variant={isFailed ? "failed" : "default"}
+                error={
+                  isFailed
+                    ? {
+                        message: failedGame!.message,
+                        actions: [
+                          { label: "Retry", onClick: handleSave },
+                          { label: "Cancel this change", onClick: revertFailedGame },
+                        ],
+                      }
+                    : undefined
+                }
+              />
             );
           })}
         </div>
@@ -299,19 +247,13 @@ export default function EditEntryForm({
 
       {saveError && <p className="rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{saveError}</p>}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-surface px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.25)]">
-        <div className="mx-auto flex max-w-sm items-center justify-between gap-3 sm:max-w-xl md:max-w-3xl">
-          <span className="truncate text-xs text-muted">{pickedCount}/{PICKS_REQUIRED} picked</span>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !allPicked || Boolean(failedGame)}
-            className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
-      </div>
+      <PicksTray
+        label={`${pickedCount}/${PICKS_REQUIRED} picked`}
+        chips={trayChips}
+        actionLabel={saving ? "Saving…" : "Save Changes"}
+        onAction={handleSave}
+        actionDisabled={saving || !allPicked || Boolean(failedGame)}
+      />
     </div>
   );
 }

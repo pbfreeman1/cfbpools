@@ -1,6 +1,14 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  sendEmail,
+  adminEmail,
+  pickemEntryConfirmationEmail,
+  adminNewPickemEntryEmail,
+  type PickemEmailPick,
+} from "@/lib/email";
+import { formatKickoff } from "@/lib/formatDate";
 
 // Escapes ilike wildcard characters so a literal "_" or "%" typed into an
 // entry name can't be misread as a pattern by Postgres's ilike.
@@ -182,4 +190,110 @@ export async function getPickemLeaderboard(scheduleId: string): Promise<Leaderbo
     isOwn: r.is_own,
     rank: r.rank,
   }));
+}
+
+type PickemPickEmailRow = {
+  team_id: string;
+  game: {
+    home_team_id: string;
+    away_team_id: string;
+    home_team: { school_name: string; short_name: string | null };
+    away_team: { school_name: string; short_name: string | null };
+  };
+};
+
+// Sends a confirmation email to the entrant (and, for new entries, an admin
+// notification) once an entry's picks are fully saved — called once by the
+// form after processPicks()/handleSave() succeeds, not per individual pick
+// save, to avoid spamming one email per game. Mirrors createEntry()'s
+// email pattern in app/actions/survivor.ts: never allowed to throw or block
+// the caller, since this runs after the picks are already durably saved.
+export async function sendPickemEntryEmails(
+  entryId: string,
+  options?: { includeAdmin?: boolean }
+): Promise<void> {
+  const includeAdmin = options?.includeAdmin ?? true;
+
+  try {
+    const supabase = await createClient();
+
+    const { data: entry } = await supabase
+      .from("pickem_entries")
+      .select("id, entry_name, user_id, schedule_id")
+      .eq("id", entryId)
+      .maybeSingle();
+    if (!entry) return;
+
+    const [{ data: week }, { data: pickRows }, { data: profile }] = await Promise.all([
+      supabase.from("schedule").select("week_number").eq("id", entry.schedule_id).single(),
+      supabase
+        .from("pickem_picks")
+        .select(
+          `team_id,
+           game:games!inner(home_team_id, away_team_id,
+             home_team:master_teams!games_home_team_id_fkey(school_name, short_name),
+             away_team:master_teams!games_away_team_id_fkey(school_name, short_name))`
+        )
+        .eq("entry_id", entryId),
+      supabase
+        .from("profiles")
+        .select("first_name, last_name, email")
+        .eq("id", entry.user_id)
+        .single(),
+    ]);
+
+    if (!week || !profile) return;
+
+    const rows = (pickRows ?? []) as unknown as PickemPickEmailRow[];
+    const picks: PickemEmailPick[] = rows.map((row) => {
+      const isHome = row.team_id === row.game.home_team_id;
+      const team = isHome ? row.game.home_team : row.game.away_team;
+      const opponent = isHome ? row.game.away_team : row.game.home_team;
+      const teamName = team.short_name || team.school_name;
+      const opponentName = opponent.short_name || opponent.school_name;
+      return {
+        gameLabel: isHome ? `${opponentName} @ ${teamName}` : `${teamName} @ ${opponentName}`,
+        teamName,
+      };
+    });
+
+    const firstName = profile.first_name || "there";
+    const email = profile.email;
+
+    if (email) {
+      await sendEmail({
+        to: email,
+        subject: `You're in — Pick'em Week ${week.week_number}`,
+        html: pickemEntryConfirmationEmail({
+          firstName,
+          entryName: entry.entry_name,
+          weekNumber: week.week_number,
+          picks,
+        }),
+        stream: "picks",
+      });
+    }
+
+    if (includeAdmin) {
+      const admin = adminEmail();
+      if (admin) {
+        await sendEmail({
+          to: admin,
+          subject: `New Pick'em entry — "${entry.entry_name}" (Week ${week.week_number})`,
+          html: adminNewPickemEntryEmail({
+            firstName,
+            lastName: profile.last_name || "",
+            email: email || "",
+            entryName: entry.entry_name,
+            weekNumber: week.week_number,
+            picks,
+            createdAt: formatKickoff(new Date()),
+          }),
+          stream: "picks",
+        });
+      }
+    }
+  } catch (err) {
+    console.error("[sendPickemEntryEmails] Email notification failed:", err);
+  }
 }

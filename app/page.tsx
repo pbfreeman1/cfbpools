@@ -38,16 +38,37 @@ export default async function Home() {
     .single();
 
   let hasPickemEntry = false;
-  if (user && appSettings?.current_week_id) {
-    const { count } = await supabase
-      .from("pickem_entries")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("schedule_id", appSettings.current_week_id);
-    hasPickemEntry = (count ?? 0) > 0;
+  let pickemWeekNumber: number | null = null;
+  let pickemEcount = 0;
+  if (appSettings?.current_week_id) {
+    const [{ data: pickemWeek }, { data: ecountRow }] = await Promise.all([
+      supabase
+        .from("schedule")
+        .select("week_number")
+        .eq("id", appSettings.current_week_id)
+        .single(),
+      supabase
+        .from("pickem_week_ecount")
+        .select("ecount")
+        .eq("schedule_id", appSettings.current_week_id)
+        .maybeSingle(),
+    ]);
+    pickemWeekNumber = pickemWeek?.week_number ?? null;
+    pickemEcount = ecountRow?.ecount ?? 0;
+
+    if (user) {
+      const { count } = await supabase
+        .from("pickem_entries")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("schedule_id", appSettings.current_week_id);
+      hasPickemEntry = (count ?? 0) > 0;
+    }
   }
 
-  const pickemCtaLabel = hasPickemEntry ? "View Your Picks" : "Enter the Pick'em Pool";
+  const pickemCtaLabel = hasPickemEntry
+    ? `Week ${pickemWeekNumber ?? ""} Pick'em Home`.trim()
+    : "Enter the Pick'em Pool";
 
   return (
     <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-app">
@@ -126,17 +147,16 @@ export default async function Home() {
                 </span>
               </div>
               <p className="mb-5 text-sm text-muted">
-                Pick 6 games against the spread each week. Go 6-0 to win the pot. Full details
-                coming soon.
+                Pick 6 games against the spread each week. Go 6-0 to win the pot.
               </p>
 
               <div className="mb-5 flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
                 <div>
                   <p className="font-data text-4xl font-black leading-none tabular-nums text-ink sm:text-5xl">
-                    6
+                    {pickemEcount}
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    Picks per week
+                    Total Entries This Week
                   </p>
                 </div>
                 <div className="text-right">
@@ -144,14 +164,18 @@ export default async function Home() {
                     Unlimited Entries
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-
+                    Enter as many as you like
                   </p>
                 </div>
               </div>
 
+              <p className="mb-5 text-sm text-muted">
+                $10 per entry, paid via Venmo. Pick 6 games, go 6-0, win the pot.
+              </p>
+
               <Link
                 href="/pickem"
-                className="mt-auto block rounded-lg bg-pickem-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-ink shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pickem-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                className="mt-auto block rounded-lg bg-pickem-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pickem-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
                 {pickemCtaLabel}
               </Link>
