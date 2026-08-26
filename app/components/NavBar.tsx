@@ -34,7 +34,7 @@ export default async function NavBar() {
 
   const mobileLinks = [
     { href: "/survivor", label: "Survivor" },
-    { href: "#", label: "Pick'em", disabled: true },
+    { href: "/pickem", label: "Pick'em" },
     ...(user
       ? [
           { href: "/dashboard", label: "Dashboard" },
@@ -59,9 +59,9 @@ export default async function NavBar() {
           <Link href="/survivor" className="text-ink hover:text-gold-400">
             Survivor
           </Link>
-          <span className="text-muted" title="Coming soon">
+          <Link href="/pickem" className="text-ink hover:text-gold-400">
             Pick&apos;em
-          </span>
+          </Link>
           {user ? (
             <>
               <Link href="/dashboard" className="text-ink hover:text-gold-400">

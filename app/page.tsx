@@ -32,6 +32,23 @@ export default async function Home() {
         ? "Add a Second Entry"
         : "Enter the Survivor Pool";
 
+  const { data: appSettings } = await supabase
+    .from("app_settings")
+    .select("current_week_id")
+    .single();
+
+  let hasPickemEntry = false;
+  if (user && appSettings?.current_week_id) {
+    const { count } = await supabase
+      .from("pickem_entries")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("schedule_id", appSettings.current_week_id);
+    hasPickemEntry = (count ?? 0) > 0;
+  }
+
+  const pickemCtaLabel = hasPickemEntry ? "View Your Picks" : "Enter the Pick'em Pool";
+
   return (
     <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-app">
       <LogoMosaic conference="SEC" />
@@ -104,8 +121,8 @@ export default async function Home() {
                 <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">
                   Weekly Pick&apos;em Pool
                 </h2>
-                <span className="rounded-full bg-pickem-500/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-pickem-400">
-                  Coming soon
+                <span className="rounded-full bg-alive/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-alive">
+                  Open
                 </span>
               </div>
               <p className="mb-5 text-sm text-muted">
@@ -113,9 +130,9 @@ export default async function Home() {
                 coming soon.
               </p>
 
-              <div className="mt-auto flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
+              <div className="mb-5 flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
                 <div>
-                  <p className="font-data text-4xl font-black leading-none tabular-nums text-muted sm:text-5xl">
+                  <p className="font-data text-4xl font-black leading-none tabular-nums text-ink sm:text-5xl">
                     6
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
@@ -123,19 +140,21 @@ export default async function Home() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-data text-lg font-bold leading-none text-muted sm:text-xl">
+                  <p className="font-data text-lg font-bold leading-none text-ink sm:text-xl">
                     Unlimited Entries
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    
+
                   </p>
                 </div>
               </div>
-              <div className="mt-5 rounded-lg border border-dashed border-pickem-500/40 bg-pickem-500/5 px-6 py-4 text-center">
-                <p className="font-display text-sm font-bold uppercase tracking-wide text-pickem-400">
-                  Opens for entries Aug 31
-                </p>
-              </div>
+
+              <Link
+                href="/pickem"
+                className="mt-auto block rounded-lg bg-pickem-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-ink shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pickem-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              >
+                {pickemCtaLabel}
+              </Link>
             </section>
           </PoolCardsScroller>
         </div>
