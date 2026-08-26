@@ -146,10 +146,14 @@ export default function EditEntryForm({
     setSavedBanner(false);
     setSaving(true);
 
+    let anyChanged = false;
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (row.gameId === null) continue; // empty slot, nothing to persist
       if (row.gameId === row.savedGameId && row.teamId === row.savedTeamId) continue; // already in sync
+
+      anyChanged = true;
 
       if (row.rowId === null) {
         const result = await savePickemPick(entryId, row.gameId, row.teamId!);
@@ -187,7 +191,11 @@ export default function EditEntryForm({
     setSavedBanner(true);
     // Fresh confirmation of the entry's current picks — admin email is
     // skipped here since that notification is specifically for new entries.
-    sendPickemEntryEmails(entryId, { includeAdmin: false }).catch(() => {});
+    // Only fires when a row actually required a save/update call, so
+    // clicking "Save Changes" with nothing edited doesn't spam an email.
+    if (anyChanged) {
+      sendPickemEntryEmails(entryId, { includeAdmin: false }).catch(() => {});
+    }
   }
 
   return (

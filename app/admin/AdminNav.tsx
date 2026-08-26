@@ -15,7 +15,10 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string }[] }[] 
   },
   {
     label: "Pick'em",
-    items: [{ href: "/admin/pickem/week", label: "Week Setup" }],
+    items: [
+      { href: "/admin/pickem/week", label: "Week Setup" },
+      { href: "/admin/pickem/exclusions", label: "Exclusions" },
+    ],
   },
   {
     label: "Site",

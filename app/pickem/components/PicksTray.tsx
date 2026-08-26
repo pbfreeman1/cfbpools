@@ -50,7 +50,7 @@ export function PicksTray({
             type="button"
             onClick={onAction}
             disabled={actionDisabled}
-            className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {actionLabel}
           </button>
