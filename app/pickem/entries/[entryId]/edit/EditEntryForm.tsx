@@ -49,6 +49,7 @@ export default function EditEntryForm({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [noChangesNotice, setNoChangesNotice] = useState(false);
   const [saveSignal, setSaveSignal] = useState(0);
 
   // Snapshot "now" once at mount — the DB trigger (validate_pickem_pick) is
@@ -145,6 +146,7 @@ export default function EditEntryForm({
     setSaveError(null);
     setFailedGame(null);
     setSavedBanner(false);
+    setNoChangesNotice(false);
     setSaving(true);
 
     let anyChanged = false;
@@ -189,14 +191,17 @@ export default function EditEntryForm({
     }
 
     setSaving(false);
-    setSavedBanner(true);
-    setSaveSignal((s) => s + 1);
-    // Fresh confirmation of the entry's current picks — admin email is
-    // skipped here since that notification is specifically for new entries.
-    // Only fires when a row actually required a save/update call, so
-    // clicking "Save Changes" with nothing edited doesn't spam an email.
     if (anyChanged) {
+      setSavedBanner(true);
+      setSaveSignal((s) => s + 1);
+      // Fresh confirmation of the entry's current picks — admin email is
+      // skipped here since that notification is specifically for new entries.
       sendPickemEntryEmails(entryId, { includeAdmin: false }).catch(() => {});
+    } else {
+      // Nothing actually changed (e.g. clicking Save with no edits made) —
+      // say so plainly rather than implying a write happened. No tray flash
+      // either, since nothing was actually saved.
+      setNoChangesNotice(true);
     }
   }
 
@@ -217,6 +222,9 @@ export default function EditEntryForm({
 
       {savedBanner && (
         <p className="rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">Changes saved.</p>
+      )}
+      {noChangesNotice && (
+        <p className="rounded-md bg-surface-hover px-3 py-2 text-sm text-muted">No changes to save.</p>
       )}
 
       {games.length === 0 ? (

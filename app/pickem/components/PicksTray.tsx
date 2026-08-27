@@ -75,7 +75,9 @@ export function PicksTray({
             type="button"
             onClick={onAction}
             disabled={actionDisabled}
-            className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`min-w-[220px] flex-shrink-0 whitespace-nowrap rounded-md px-5 py-2.5 text-center text-sm font-semibold text-app transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-50 ${
+              showSaved ? "bg-alive hover:bg-alive" : "bg-pickem-500 hover:bg-pickem-600"
+            }`}
           >
             {displayLabel}
           </button>

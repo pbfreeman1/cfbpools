@@ -174,7 +174,7 @@ export function pickemEntryConfirmationEmail({
     <ul style="padding-left: 20px; line-height: 1.6;">${picksHtml}</ul>
     <p>Entries are unlimited — enter as many times as you'd like each week.</p>
     <p>The leaderboard and live scores will update as games kick off.</p>
-    <p>You can still edit any pick on a game that hasn't kicked off yet — just go to /pickem and open this entry.</p>
+    <p>You can still edit any pick on a game that hasn't kicked off yet — just go to <a href="https://cfbpools.com/pickem" style="color: #4C7EFF;">the Pick'em home page</a> and open this entry.</p>
     <p><a href="https://cfbpools.com/pickem" style="color: #4C7EFF;">View the Pick&apos;em pool &rarr;</a></p>
   `);
 }

@@ -201,7 +201,7 @@ export default function NewEntryForm({
           <p className="text-muted">
             Need to change a pick? Come back to{" "}
             <Link href="/pickem" className="text-pickem-400 hover:underline">
-              /pickem
+              the Pick&apos;em home page
             </Link>{" "}
             anytime before kickoff and open this entry to edit it.
           </p>

@@ -169,10 +169,6 @@ export default async function Home() {
                 </div>
               </div>
 
-              <p className="mb-5 text-sm text-muted">
-                $10 per entry, paid via Venmo. Pick 6 games, go 6-0, win the pot.
-              </p>
-
               <Link
                 href="/pickem"
                 className="mt-auto block rounded-lg bg-pickem-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pickem-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"

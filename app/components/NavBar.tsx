@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { signOut } from "@/app/actions/auth";
 import MobileNav from "./MobileNav";
 
 function getInitials(firstName: string | null | undefined, lastName: string | null | undefined, email: string | null | undefined) {
@@ -38,6 +39,7 @@ export default async function NavBar() {
     ...(user
       ? [
           { href: "/dashboard", label: "Dashboard" },
+          { label: "Log out", action: signOut },
           ...(isAdmin ? [{ href: "/admin", label: "Admin" }] : []),
         ]
       : [
