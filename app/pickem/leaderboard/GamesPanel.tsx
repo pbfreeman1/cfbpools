@@ -76,7 +76,9 @@ export default function GamesPanel({ games }: { games: PickemGameStatus[] }) {
                   <p className="mt-0.5 text-[11px] text-muted">
                     {formatScheduleRow(g.kickoffTime)}
                     {homeSpread ? ` · ${g.homeTeam.name} ${homeSpread}` : ""}
-                    {scoreKnown ? ` · ${g.awayScore}-${g.homeScore}` : ""}
+                    {scoreKnown
+                      ? ` · ${g.awayTeam.name} ${g.awayScore} – ${g.homeTeam.name} ${g.homeScore}`
+                      : ""}
                   </p>
                 </div>
                 <span

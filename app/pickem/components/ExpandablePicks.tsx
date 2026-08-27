@@ -146,7 +146,9 @@ export function ExpandablePicks({
                   <p className="mt-0.5 text-[11px] text-muted">
                     Pick: {pickedIsHome ? pick.homeTeam.name : pick.awayTeam.name}
                     {spread ? ` ${spread}` : ""}
-                    {scoreKnown ? ` · ${pick.awayScore}-${pick.homeScore}` : ""}
+                    {scoreKnown
+                      ? ` · ${pick.awayTeam.name} ${pick.awayScore} – ${pick.homeTeam.name} ${pick.homeScore}`
+                      : ""}
                     {!scoreKnown ? ` · ${formatScheduleRow(pick.kickoffTime)}` : ""}
                   </p>
                 </div>
