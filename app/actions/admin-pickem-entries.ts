@@ -115,26 +115,65 @@ export async function adminSetPickemPick(formData: FormData) {
       .eq("id", pickId)
       .single();
 
-    const { error } = await supabase
+    if (before && before.team_id === teamId) {
+      // Clicking the already-picked team clears the pick rather than
+      // re-saving it (a genuine no-op update would just restate the same
+      // row) — mirrors the participant-facing "click to deselect" behavior.
+      const { error } = await supabase
+        .from("pickem_picks")
+        .delete()
+        .eq("id", pickId)
+        .eq("entry_id", entryId);
+      if (error) {
+        redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+      }
+
+      await logAdminAction(
+        supabase,
+        user.id,
+        "admin_clear_pickem_pick",
+        "pickem_picks",
+        pickId,
+        before,
+        {},
+        "Pick'em entries — pick cleared by admin"
+      );
+    } else {
+      const { error } = await supabase
+        .from("pickem_picks")
+        .update({ game_id: gameId, team_id: teamId })
+        .eq("id", pickId)
+        .eq("entry_id", entryId);
+      if (error) {
+        redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+      }
+
+      await logAdminAction(
+        supabase,
+        user.id,
+        "admin_update_pickem_pick",
+        "pickem_picks",
+        pickId,
+        before ?? {},
+        { game_id: gameId, team_id: teamId },
+        "Pick'em entries — pick updated by admin"
+      );
+    }
+  } else {
+    // Server-side backstop for the 6-pick cap — the UI already disables
+    // buttons on games past the cap, but a stale page load or a direct POST
+    // must still be blocked here, since the UI check alone isn't enforcement.
+    const { count } = await supabase
       .from("pickem_picks")
-      .update({ game_id: gameId, team_id: teamId })
-      .eq("id", pickId)
+      .select("*", { count: "exact", head: true })
       .eq("entry_id", entryId);
-    if (error) {
-      redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+    if ((count ?? 0) >= 6) {
+      redirect(
+        `${detailPath}?error=` +
+          encodeURIComponent("This entry already has 6 picks. Remove one before adding another.")
+      );
     }
 
-    await logAdminAction(
-      supabase,
-      user.id,
-      "admin_update_pickem_pick",
-      "pickem_picks",
-      pickId,
-      before ?? {},
-      { game_id: gameId, team_id: teamId },
-      "Pick'em entries — pick updated by admin"
-    );
-  } else {
     const { data, error } = await supabase
       .from("pickem_picks")
       .insert({ entry_id: entryId, game_id: gameId, team_id: teamId })

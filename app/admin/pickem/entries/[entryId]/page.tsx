@@ -152,6 +152,11 @@ export default async function AdminPickemEntryDetailPage({
               effectiveSpread === null ? null : formatSpread(effectiveSpread === 0 ? 0 : -effectiveSpread);
             const homeName = game.home_team.short_name || game.home_team.school_name;
             const awayName = game.away_team.short_name || game.away_team.school_name;
+            // A game with no pick of its own is blocked once the entry
+            // already has 6 picks elsewhere — a game that's already one of
+            // those 6 stays interactive so switching/clearing (see item 1a)
+            // still works.
+            const capBlocksThisGame = !pick && pickByGame.size >= 6;
 
             return (
               <form
@@ -174,10 +179,13 @@ export default async function AdminPickemEntryDetailPage({
                     type="submit"
                     name="teamId"
                     value={game.away_team.id}
+                    disabled={capBlocksThisGame}
                     className={`rounded-md border px-2.5 py-2 text-left text-sm transition ${
-                      pick?.team_id === game.away_team.id
-                        ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
-                        : "border-edge text-ink hover:bg-surface-hover"
+                      capBlocksThisGame
+                        ? "cursor-not-allowed border-edge opacity-60"
+                        : pick?.team_id === game.away_team.id
+                          ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+                          : "border-edge text-ink hover:bg-surface-hover"
                     }`}
                   >
                     {awayName}
@@ -187,16 +195,24 @@ export default async function AdminPickemEntryDetailPage({
                     type="submit"
                     name="teamId"
                     value={game.home_team.id}
+                    disabled={capBlocksThisGame}
                     className={`rounded-md border px-2.5 py-2 text-left text-sm transition ${
-                      pick?.team_id === game.home_team.id
-                        ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
-                        : "border-edge text-ink hover:bg-surface-hover"
+                      capBlocksThisGame
+                        ? "cursor-not-allowed border-edge opacity-60"
+                        : pick?.team_id === game.home_team.id
+                          ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+                          : "border-edge text-ink hover:bg-surface-hover"
                     }`}
                   >
                     {homeName}
                     {homeSpread && <span className="ml-1.5 font-data text-xs text-muted">{homeSpread}</span>}
                   </button>
                 </div>
+                {capBlocksThisGame && (
+                  <p className="mt-2 text-xs text-muted">
+                    6 picks already made — clear one to add here.
+                  </p>
+                )}
               </form>
             );
           })}
