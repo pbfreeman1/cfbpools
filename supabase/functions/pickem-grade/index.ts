@@ -185,23 +185,30 @@ Deno.serve(async (req) => {
     for (const scheduleId of weekIdsNeeded) {
       const week = scheduleById.get(scheduleId);
       if (!week) continue;
-      const res = await fetch(
-        `${CFBD_BASE}/games?year=${week.season}&week=${week.week_number}&seasonType=regular&classification=fbs`,
-        { headers: cfbdHeaders(CFBD_API_KEY) }
-      );
-      if (!res.ok) {
-        console.error(
-          `[pickem-grade] CFBD /games failed for week ${week.week_number}: ${res.status} ${await res.text()}`
+      // Both FBS and FCS — a selected game can be an FCS matchup (real FCS
+      // openers, etc.). Same widening as cfbd-sync step 3. DII/DIII/NAIA
+      // stay excluded by only asking for these two classifications. An
+      // FBS-vs-FCS game shows up in both result sets; the Map de-dupes on
+      // CFBD game id, and the payload is identical either way.
+      for (const classification of ["fbs", "fcs"] as const) {
+        const res = await fetch(
+          `${CFBD_BASE}/games?year=${week.season}&week=${week.week_number}&seasonType=regular&classification=${classification}`,
+          { headers: cfbdHeaders(CFBD_API_KEY) }
         );
-        continue; // non-fatal — this week's games just don't get updated this run, retried next cycle
-      }
-      const games = await res.json();
-      for (const g of games) {
-        cfbdGameById.set(g.id, {
-          completed: Boolean(g.completed),
-          homePoints: g.homePoints ?? null,
-          awayPoints: g.awayPoints ?? null,
-        });
+        if (!res.ok) {
+          console.error(
+            `[pickem-grade] CFBD /games (${classification}) failed for week ${week.week_number}: ${res.status} ${await res.text()}`
+          );
+          continue; // non-fatal — retried next cycle
+        }
+        const games = await res.json();
+        for (const g of games) {
+          cfbdGameById.set(g.id, {
+            completed: Boolean(g.completed),
+            homePoints: g.homePoints ?? null,
+            awayPoints: g.awayPoints ?? null,
+          });
+        }
       }
     }
 
