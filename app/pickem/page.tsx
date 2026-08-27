@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatKickoff } from "@/lib/formatDate";
+import { getPickemLeaderboard } from "@/app/actions/pickem";
+import OwnEntryCard, { type OwnEntryRecord } from "./OwnEntryCard";
 
 export default async function PickemHomePage() {
   const supabase = await createClient();
@@ -43,6 +44,7 @@ export default async function PickemHomePage() {
 
   let entries: { id: string; entry_name: string; created_at: string }[] = [];
   const pickCountByEntry = new Map<string, number>();
+  const recordByEntry = new Map<string, OwnEntryRecord>();
 
   if (user && scheduleId) {
     const { data: entryRows } = await supabase
@@ -64,6 +66,23 @@ export default async function PickemHomePage() {
       (pickRows ?? []).forEach((p) => {
         pickCountByEntry.set(p.entry_id, (pickCountByEntry.get(p.entry_id) ?? 0) + 1);
       });
+
+      // Final + live record per entry. get_pickem_leaderboard always
+      // includes every one of the caller's own entries (regardless of the
+      // ecount window), so filtering to is_own here gives exactly this
+      // user's entries with the same tested live-projection math the
+      // leaderboard uses — no second implementation.
+      const board = await getPickemLeaderboard(scheduleId);
+      (board ?? [])
+        .filter((r) => r.isOwn)
+        .forEach((r) => {
+          recordByEntry.set(r.entryId, {
+            wins: r.wins,
+            effectiveLosses: r.effectiveLosses,
+            liveWins: r.liveWins,
+            liveLosses: r.liveLosses,
+          });
+        });
     }
   }
 
@@ -186,24 +205,16 @@ export default async function PickemHomePage() {
                     Your entries — Week {week.week_number}
                   </h2>
                   <div className="flex flex-col gap-2">
-                    {entries.map((entry) => {
-                      const picksMade = pickCountByEntry.get(entry.id) ?? 0;
-                      return (
-                        <Link
-                          key={entry.id}
-                          href={`/pickem/entries/${entry.id}/edit`}
-                          className="flex items-center justify-between gap-3 rounded-lg border border-edge bg-surface px-4 py-3 transition hover:border-pickem-500/50 hover:bg-surface-hover"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-ink">{entry.entry_name}</p>
-                            <p className="text-xs text-muted">Entered {formatKickoff(entry.created_at)}</p>
-                          </div>
-                          <span className="flex-shrink-0 font-data text-sm font-semibold text-pickem-400">
-                            {picksMade}/6
-                          </span>
-                        </Link>
-                      );
-                    })}
+                    {entries.map((entry) => (
+                      <OwnEntryCard
+                        key={entry.id}
+                        entryId={entry.id}
+                        entryName={entry.entry_name}
+                        createdAt={entry.created_at}
+                        picksMade={pickCountByEntry.get(entry.id) ?? 0}
+                        record={recordByEntry.get(entry.id) ?? null}
+                      />
+                    ))}
                   </div>
                 </>
               )}

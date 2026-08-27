@@ -1,7 +1,20 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getPickemLeaderboard } from "@/app/actions/pickem";
+import { getPickemLeaderboard, getLastPickemSyncTime } from "@/app/actions/pickem";
 import LeaderboardTable from "./LeaderboardTable";
+import type { PickemGameStatus } from "./GamesPanel";
+
+type GameRow = {
+  id: string;
+  kickoff_time: string;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
+  home_spread: number | null;
+  pickem_spread_override: number | null;
+  home_team: { id: string; school_name: string; short_name: string | null; logo_url: string | null };
+  away_team: { id: string; school_name: string; short_name: string | null; logo_url: string | null };
+};
 
 export default async function PickemLeaderboardPage({
   searchParams,
@@ -28,9 +41,20 @@ export default async function PickemLeaderboardPage({
     );
   }
 
-  const [{ data: week }, rows] = await Promise.all([
+  const [{ data: week }, rows, lastSync, { data: gamesData }] = await Promise.all([
     supabase.from("schedule").select("week_number, label").eq("id", scheduleId).single(),
     getPickemLeaderboard(scheduleId),
+    getLastPickemSyncTime(),
+    supabase
+      .from("games")
+      .select(
+        `id, kickoff_time, status, home_score, away_score, home_spread, pickem_spread_override,
+         home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url),
+         away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url)`
+      )
+      .eq("schedule_id", scheduleId)
+      .eq("pickem_selected", true)
+      .order("kickoff_time"),
   ]);
 
   // A failed fetch on first load has nothing to fall back to — empty is a
@@ -38,6 +62,25 @@ export default async function PickemLeaderboardPage({
   // yet. The polling path in LeaderboardTable is where a failure actually
   // matters, since there it would otherwise clobber already-good data.
   const initialRows = rows ?? [];
+
+  const games: PickemGameStatus[] = ((gamesData ?? []) as unknown as GameRow[]).map((g) => ({
+    id: g.id,
+    kickoffTime: g.kickoff_time,
+    status: g.status,
+    effectiveSpread: g.pickem_spread_override ?? g.home_spread,
+    homeScore: g.home_score,
+    awayScore: g.away_score,
+    homeTeam: {
+      id: g.home_team.id,
+      name: g.home_team.short_name || g.home_team.school_name,
+      logoUrl: g.home_team.logo_url,
+    },
+    awayTeam: {
+      id: g.away_team.id,
+      name: g.away_team.short_name || g.away_team.school_name,
+      logoUrl: g.away_team.logo_url,
+    },
+  }));
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl">
@@ -51,7 +94,12 @@ export default async function PickemLeaderboardPage({
         {week ? `Week ${week.week_number}${week.label ? ` — ${week.label}` : ""}` : ""}
       </p>
 
-      <LeaderboardTable scheduleId={scheduleId} initialRows={initialRows} />
+      <LeaderboardTable
+        scheduleId={scheduleId}
+        initialRows={initialRows}
+        initialLastSync={lastSync}
+        games={games}
+      />
     </main>
   );
 }

@@ -34,11 +34,23 @@ function formatSpread(spread: number): string {
   return spread > 0 ? `+${spread}` : `${spread}`;
 }
 
-export function teamSpreadLabel(game: GameOption, teamId: string): string | null {
-  if (game.effectiveSpread === null) return null;
-  const isHome = teamId === game.homeTeam.id;
-  const raw = isHome ? game.effectiveSpread : game.effectiveSpread === 0 ? 0 : -game.effectiveSpread;
+// Same home-perspective spread math as teamSpreadLabel(), but taking loose
+// primitives rather than a full GameOption — used where all we have is the
+// effective spread and the two team ids (e.g. ExpandablePicks rendering
+// graded picks on the leaderboard).
+export function spreadForTeam(
+  effectiveSpread: number | null,
+  homeTeamId: string,
+  teamId: string
+): string | null {
+  if (effectiveSpread === null) return null;
+  const isHome = teamId === homeTeamId;
+  const raw = isHome ? effectiveSpread : effectiveSpread === 0 ? 0 : -effectiveSpread;
   return formatSpread(raw);
+}
+
+export function teamSpreadLabel(game: GameOption, teamId: string): string | null {
+  return spreadForTeam(game.effectiveSpread, game.homeTeam.id, teamId);
 }
 
 export function GameCard({

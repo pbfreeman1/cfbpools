@@ -146,6 +146,11 @@ export type LeaderboardRow = {
   pushes: number;
   effectiveLosses: number;
   pending: number;
+  // Final results plus a live, unofficial projection for in-progress games.
+  // Equal to wins/effectiveLosses when nothing is in progress. Display only —
+  // never persisted to pickem_picks.result. See get_pickem_leaderboard().
+  liveWins: number;
+  liveLosses: number;
   isOwn: boolean;
   rank: number;
 };
@@ -176,6 +181,8 @@ export async function getPickemLeaderboard(scheduleId: string): Promise<Leaderbo
       pushes: number;
       effective_losses: number;
       pending: number;
+      live_wins: number;
+      live_losses: number;
       is_own: boolean;
       rank: number;
     }[]
@@ -187,9 +194,107 @@ export async function getPickemLeaderboard(scheduleId: string): Promise<Leaderbo
     pushes: r.pushes,
     effectiveLosses: r.effective_losses,
     pending: r.pending,
+    liveWins: r.live_wins,
+    liveLosses: r.live_losses,
     isOwn: r.is_own,
     rank: r.rank,
   }));
+}
+
+export type PickemPickResult = "win" | "loss" | "push";
+
+export type PickemEntryPickDetail = {
+  gameId: string;
+  kickoffTime: string;
+  status: string;
+  homeTeam: { id: string; name: string; logoUrl: string | null };
+  awayTeam: { id: string; name: string; logoUrl: string | null };
+  homeScore: number | null;
+  awayScore: number | null;
+  effectiveSpread: number | null;
+  pickedTeamId: string;
+  // Audited final result, or null until the game is graded.
+  result: PickemPickResult | null;
+  // Live, unofficial projection for an in-progress game — null when the pick
+  // is already final or the game hasn't posted a score yet.
+  liveResult: PickemPickResult | null;
+};
+
+type EntryPicksRpcRow = {
+  game_id: string;
+  kickoff_time: string;
+  status: string;
+  home_team_id: string;
+  away_team_id: string;
+  home_score: number | null;
+  away_score: number | null;
+  effective_spread: number | null;
+  team_id: string;
+  result: PickemPickResult | null;
+  live_result: PickemPickResult | null;
+};
+
+// Per-entry pick detail for the expandable leaderboard / homepage rows.
+// Backed by get_pickem_entry_picks(), whose `kickoff_time <= now()` filter
+// is what keeps not-yet-started picks private — applied uniformly, including
+// for the viewer's own entry. Returns null on a failed fetch (distinct from
+// an empty array, which is a real entry with no started games yet).
+export async function getPickemEntryPicks(
+  entryId: string
+): Promise<PickemEntryPickDetail[] | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_pickem_entry_picks", {
+    p_entry_id: entryId,
+  });
+  if (error || !data) return null;
+
+  const rows = data as EntryPicksRpcRow[];
+  if (rows.length === 0) return [];
+
+  const teamIds = [...new Set(rows.flatMap((r) => [r.home_team_id, r.away_team_id]))];
+  const { data: teamRows } = await supabase
+    .from("master_teams")
+    .select("id, school_name, short_name, logo_url")
+    .in("id", teamIds);
+
+  const teamById = new Map(
+    (teamRows ?? []).map((t) => [
+      t.id as string,
+      {
+        id: t.id as string,
+        name: (t.short_name as string | null) || (t.school_name as string),
+        logoUrl: (t.logo_url as string | null) ?? null,
+      },
+    ])
+  );
+  const team = (id: string) =>
+    teamById.get(id) ?? { id, name: "—", logoUrl: null };
+
+  return rows.map((r) => ({
+    gameId: r.game_id,
+    kickoffTime: r.kickoff_time,
+    status: r.status,
+    homeTeam: team(r.home_team_id),
+    awayTeam: team(r.away_team_id),
+    homeScore: r.home_score,
+    awayScore: r.away_score,
+    effectiveSpread: r.effective_spread,
+    pickedTeamId: r.team_id,
+    result: r.result,
+    liveResult: r.live_result,
+  }));
+}
+
+// The real freshness signal for the leaderboard "Updated" label — the last
+// time the pickem-grade sync actually completed successfully, not when the
+// browser's own poll last ran. sync_logs is admin-only select, so this
+// reads through the SECURITY DEFINER get_last_pickem_sync_time() helper.
+// Returns an ISO timestamp string, or null if grading has never run.
+export async function getLastPickemSyncTime(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_last_pickem_sync_time");
+  if (error || !data) return null;
+  return data as string;
 }
 
 type PickemPickEmailRow = {
