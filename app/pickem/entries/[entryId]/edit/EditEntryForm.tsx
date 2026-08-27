@@ -49,6 +49,7 @@ export default function EditEntryForm({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [saveSignal, setSaveSignal] = useState(0);
 
   // Snapshot "now" once at mount — the DB trigger (validate_pickem_pick) is
   // the real enforcement either way, this just needs to be close enough to
@@ -189,6 +190,7 @@ export default function EditEntryForm({
 
     setSaving(false);
     setSavedBanner(true);
+    setSaveSignal((s) => s + 1);
     // Fresh confirmation of the entry's current picks — admin email is
     // skipped here since that notification is specifically for new entries.
     // Only fires when a row actually required a save/update call, so
@@ -261,6 +263,7 @@ export default function EditEntryForm({
         actionLabel={saving ? "Saving…" : "Save Changes"}
         onAction={handleSave}
         actionDisabled={saving || !allPicked || Boolean(failedGame)}
+        savedSignal={saveSignal}
       />
     </div>
   );

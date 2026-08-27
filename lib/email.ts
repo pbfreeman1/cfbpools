@@ -151,7 +151,7 @@ export function bonusPickConfirmationEmail({
   `);
 }
 
-export type PickemEmailPick = { gameLabel: string; teamName: string };
+export type PickemEmailPick = { gameLabel: string; teamName: string; spreadLabel: string };
 
 export function pickemEntryConfirmationEmail({
   firstName,
@@ -165,16 +165,16 @@ export function pickemEntryConfirmationEmail({
   picks: PickemEmailPick[];
 }) {
   const picksHtml = picks
-    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName}</strong></li>`)
+    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName} ${p.spreadLabel}</strong></li>`)
     .join("");
   return wrapper(`
     <h1 style="font-size: 20px; margin: 0 0 12px;">You're in — Pick'em Week ${weekNumber}</h1>
     <p>Hi ${firstName},</p>
     <p>Your entry <strong>${entryName}</strong> is set for Week ${weekNumber}:</p>
     <ul style="padding-left: 20px; line-height: 1.6;">${picksHtml}</ul>
-    <p><strong>$10 entry fee via Venmo to @brentfreeman1.</strong></p>
     <p>Entries are unlimited — enter as many times as you'd like each week.</p>
     <p>The leaderboard and live scores will update as games kick off.</p>
+    <p>You can still edit any pick on a game that hasn't kicked off yet — just go to /pickem and open this entry.</p>
     <p><a href="https://cfbpools.com/pickem" style="color: #4C7EFF;">View the Pick&apos;em pool &rarr;</a></p>
   `);
 }
@@ -197,7 +197,7 @@ export function adminNewPickemEntryEmail({
   createdAt: string;
 }) {
   const picksHtml = picks
-    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName}</strong></li>`)
+    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName} ${p.spreadLabel}</strong></li>`)
     .join("");
   return wrapper(`
     <h1 style="font-size: 18px; margin: 0 0 12px;">New Pick&apos;em entry</h1>

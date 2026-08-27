@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
 export type PickChip = {
   gameId: string;
   logoUrl: string | null;
@@ -13,18 +15,41 @@ export function PicksTray({
   actionLabel,
   onAction,
   actionDisabled,
+  savedSignal,
 }: {
   label: string;
   chips: PickChip[];
   actionLabel: string;
   onAction: () => void;
   actionDisabled: boolean;
+  // Bump this (e.g. a counter incremented on every successful save) to
+  // briefly flash "✓ Saved" on the action button — a number rather than a
+  // boolean so two saves in a row each retrigger the flash even though the
+  // "just saved" state is true both times. Omit if the parent has no save
+  // confirmation to surface here (e.g. the New Entry form's create flow).
+  savedSignal?: number;
 }) {
+  const [showSaved, setShowSaved] = useState(false);
+  const mounted = useRef(false);
+
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return; // don't flash on initial mount
+    }
+    if (savedSignal === undefined) return;
+    setShowSaved(true);
+    const timer = setTimeout(() => setShowSaved(false), 2000);
+    return () => clearTimeout(timer);
+  }, [savedSignal]);
+
+  const displayLabel = showSaved ? "✓ Saved" : actionLabel;
+
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-edge bg-surface px-4 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.25)]">
       <div className="mx-auto max-w-sm sm:max-w-xl md:max-w-3xl">
         {chips.length > 0 && (
-          <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+          <div className="mb-2 flex flex-wrap gap-2 pb-1">
             {chips.map((chip) => (
               <div
                 key={chip.gameId}
@@ -52,7 +77,7 @@ export function PicksTray({
             disabled={actionDisabled}
             className="flex-shrink-0 rounded-md bg-pickem-500 px-5 py-2.5 text-sm font-semibold text-app transition hover:bg-pickem-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {actionLabel}
+            {displayLabel}
           </button>
         </div>
       </div>

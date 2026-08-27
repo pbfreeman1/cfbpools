@@ -59,11 +59,9 @@ export default function PickemRulesPage() {
             The pot
           </h2>
           <p className="text-muted">
-            Every paid entry that week adds to the eCount — the running total of entries counted
-            toward that week&apos;s pot. The pot is simply{" "}
-            <span className="text-ink">$10 &times; that week&apos;s eCount</span>, so it grows as
-            more entries come in and is only final once all entry fees are collected. If more
-            than one entry goes 6-0, the pot is split evenly among them.
+            Every entry costs $10, and the pot total shown is always tentative — it&apos;s only
+            final once all entry fees for the week are actually collected. If more than one
+            entry goes 6-0, the final pot is split evenly among them.
           </p>
         </section>
 
@@ -76,6 +74,26 @@ export default function PickemRulesPage() {
             6-0 in a given week, the pool&apos;s handling of that week (rollover, best record, etc.)
             will be announced separately.
           </p>
+        </section>
+
+        <section>
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-muted">
+            A few notes
+          </h2>
+          <div className="flex flex-col gap-2 text-xs text-muted">
+            <p>
+              Scores, leaderboard standings, and pick results are shown for convenience and
+              aren&apos;t official until reviewed and confirmed by the pool administrator. In the
+              rare case of a scoring error or site issue, the administrator may correct results
+              before anything is finalized.
+            </p>
+            <p>
+              All entries, picks, and account activity are logged in detail to keep things fair
+              for everyone. Anyone found exploiting a bug or unintended site behavior to gain an
+              advantage will have all their entries removed from every pool, forfeit any
+              winnings, and be banned from future pools.
+            </p>
+          </div>
         </section>
       </div>
 

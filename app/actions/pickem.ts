@@ -197,10 +197,32 @@ type PickemPickEmailRow = {
   game: {
     home_team_id: string;
     away_team_id: string;
+    home_spread: number | null;
+    pickem_spread_override: number | null;
     home_team: { school_name: string; short_name: string | null };
     away_team: { school_name: string; short_name: string | null };
   };
 };
+
+// Same home-team-perspective spread math as teamSpreadLabel() in
+// app/pickem/components/GameCard.tsx, duplicated here rather than imported
+// since that file is a "use client" module — a server action can't cross
+// that boundary to pull in a client component's helper.
+function formatSpreadForEmail(spread: number): string {
+  if (spread === 0) return "PK";
+  return spread > 0 ? `+${spread}` : `${spread}`;
+}
+
+function teamSpreadLabelForEmail(
+  homeTeamId: string,
+  teamId: string,
+  effectiveSpread: number | null
+): string {
+  if (effectiveSpread === null) return "";
+  const isHome = teamId === homeTeamId;
+  const raw = isHome ? effectiveSpread : effectiveSpread === 0 ? 0 : -effectiveSpread;
+  return formatSpreadForEmail(raw);
+}
 
 // Sends a confirmation email to the entrant (and, for new entries, an admin
 // notification) once an entry's picks are fully saved — called once by the
@@ -230,7 +252,7 @@ export async function sendPickemEntryEmails(
         .from("pickem_picks")
         .select(
           `team_id,
-           game:games!inner(home_team_id, away_team_id,
+           game:games!inner(home_team_id, away_team_id, home_spread, pickem_spread_override,
              home_team:master_teams!games_home_team_id_fkey(school_name, short_name),
              away_team:master_teams!games_away_team_id_fkey(school_name, short_name))`
         )
@@ -251,9 +273,11 @@ export async function sendPickemEntryEmails(
       const opponent = isHome ? row.game.away_team : row.game.home_team;
       const teamName = team.short_name || team.school_name;
       const opponentName = opponent.short_name || opponent.school_name;
+      const effectiveSpread = row.game.pickem_spread_override ?? row.game.home_spread;
       return {
         gameLabel: isHome ? `${opponentName} @ ${teamName}` : `${teamName} @ ${opponentName}`,
         teamName,
+        spreadLabel: teamSpreadLabelForEmail(row.game.home_team_id, row.team_id, effectiveSpread),
       };
     });
 

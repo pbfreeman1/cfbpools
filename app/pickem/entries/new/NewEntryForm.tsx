@@ -194,13 +194,16 @@ export default function NewEntryForm({
         </p>
 
         <div className="mt-5 flex flex-col gap-2 rounded-md border border-edge bg-app px-4 py-3 text-sm text-ink">
-          <p>
-            <span className="font-semibold">$10 entry fee</span> via Venmo to{" "}
-            <span className="font-semibold">@brentfreeman1</span>.
-          </p>
           <p className="text-muted">Enter as many times as you&apos;d like — entries are unlimited.</p>
           <p className="text-muted">
             The leaderboard and live scores will update on the Pick&apos;em page as games kick off.
+          </p>
+          <p className="text-muted">
+            Need to change a pick? Come back to{" "}
+            <Link href="/pickem" className="text-pickem-400 hover:underline">
+              /pickem
+            </Link>{" "}
+            anytime before kickoff and open this entry to edit it.
           </p>
         </div>
 
@@ -226,7 +229,7 @@ export default function NewEntryForm({
             type="text"
             value={entryName}
             onChange={(e) => setEntryName(e.target.value)}
-            placeholder="e.g. The Comeback Kids"
+            placeholder="Please enter entry name"
             className="w-full rounded-md border border-edge bg-app px-3 py-2 text-base text-ink placeholder:text-muted focus:border-pickem-500 focus:outline-none focus:ring-1 focus:ring-pickem-500"
           />
           {entryName.trim() && (
