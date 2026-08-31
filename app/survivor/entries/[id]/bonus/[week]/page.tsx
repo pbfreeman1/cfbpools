@@ -50,23 +50,26 @@ export default async function BonusTeamSelectPage({
     .single();
   if (!scheduleRow) notFound();
 
+  // This week's existing bonus pick, if any. Rather than bouncing back to the
+  // selector, we let the user edit it in place (or clear it). team_a_id is the
+  // regular-pick slot, team_b_id the bonus slot (see saveBonusPick /
+  // sync_survivor_bonus_pick_to_picks).
   const { data: existingBonusPick } = await supabase
     .from("survivor_bonus_picks")
-    .select("id")
+    .select("team_a_id, team_b_id")
     .eq("entry_id", entryId)
     .eq("schedule_id", scheduleRow.id)
     .maybeSingle();
-  if (existingBonusPick) {
-    redirect(
-      `/survivor/entries/${entryId}/bonus?error=${encodeURIComponent(`Week ${weekNumber} already has a bonus pick`)}`
-    );
-  }
+  const existingBonusTeamId = existingBonusPick?.team_b_id ?? null;
 
-  const { count: bonusWeeksUsed } = await supabase
+  // Cap check excludes THIS week's own pick — editing an existing bonus week
+  // must stay possible even once both bonus slots are spent for the season.
+  const { count: otherBonusWeeksUsed } = await supabase
     .from("survivor_bonus_picks")
     .select("*", { count: "exact", head: true })
-    .eq("entry_id", entryId);
-  if ((bonusWeeksUsed ?? 0) >= 2) {
+    .eq("entry_id", entryId)
+    .neq("schedule_id", scheduleRow.id);
+  if ((otherBonusWeeksUsed ?? 0) >= 2) {
     redirect(
       `/survivor/entries/${entryId}/bonus?error=${encodeURIComponent("Both bonus picks have already been used this season")}`
     );
@@ -116,6 +119,33 @@ export default async function BonusTeamSelectPage({
   });
 
   const now = Date.now();
+
+  // team id -> display info, for the read-only summary of a locked pick.
+  const teamById = new Map<string, TeamRef>();
+  (weekGames ?? []).forEach((g) => {
+    const home = g.home_team as unknown as TeamRef;
+    const away = g.away_team as unknown as TeamRef;
+    teamById.set(home.id, home);
+    teamById.set(away.id, away);
+  });
+
+  // Locked once the earliest kickoff among the existing pick's two teams'
+  // games has passed — the same rule validate_survivor_bonus_pick_delete /
+  // validate_survivor_bonus_pick (UPDATE branch) enforce server-side.
+  let locked = false;
+  if (existingBonusPick) {
+    const pickTeamIds = new Set([existingBonusPick.team_a_id, existingBonusPick.team_b_id]);
+    const kickoffs = (weekGames ?? [])
+      .filter((g) => {
+        const home = g.home_team as unknown as TeamRef;
+        const away = g.away_team as unknown as TeamRef;
+        return pickTeamIds.has(home.id) || pickTeamIds.has(away.id);
+      })
+      .map((g) => new Date(g.kickoff_time).getTime())
+      .filter((n) => !Number.isNaN(n));
+    if (kickoffs.length > 0) locked = Math.min(...kickoffs) <= now;
+  }
+
   const teamOptions: TeamOption[] = [];
   (weekGames ?? []).forEach((g) => {
     const home = g.home_team as unknown as TeamRef;
@@ -161,17 +191,20 @@ export default async function BonusTeamSelectPage({
     return new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime();
   });
 
-  // The entry's existing pick for THIS week, if any — always a plain
-  // regular pick here, never a bonus pick (the redirect above already sent
-  // the user back to the selector if this week already has a bonus pick).
-  // Its name/logo come straight out of teamOptions rather than a second
-  // query, since a validly-picked team must already be one of this week's
-  // SEC options, and usedWeekByTeamId deliberately excludes this week's
-  // own pick from the "already used" flags, so it's never disabled here.
+  // The entry's existing regular-pick team for THIS week, if any. When a bonus
+  // pick already exists, survivor_picks.team_id is kept in sync with
+  // team_a_id, so this resolves to the bonus pick's regular slot. Its
+  // name/logo come straight out of teamOptions rather than a second query,
+  // since a validly-picked team must already be one of this week's SEC
+  // options, and usedWeekByTeamId deliberately excludes this week's own pick
+  // from the "already used" flags, so it's never disabled here.
   const currentWeekPick = (picks ?? []).find((p) => p.schedule_id === scheduleRow.id) ?? null;
   const existingRegularTeam = currentWeekPick
     ? (teamOptions.find((t) => t.id === currentWeekPick.team_id) ?? null)
     : null;
+
+  const lockedTeamA = existingBonusPick ? (teamById.get(existingBonusPick.team_a_id) ?? null) : null;
+  const lockedTeamB = existingBonusPick ? (teamById.get(existingBonusPick.team_b_id) ?? null) : null;
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl">
@@ -198,7 +231,36 @@ export default async function BonusTeamSelectPage({
         <span aria-hidden="true">🔒 FCS</span> = FCS opponent — not eligible this week.
       </p>
 
-      {teamOptions.length === 0 ? (
+      {locked && existingBonusPick ? (
+        <div className="rounded-md border-2 border-gold-500 p-3">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gold-400">
+            Bonus pick — locked
+          </p>
+          <div className="flex flex-col gap-2">
+            {[lockedTeamA, lockedTeamB].map((team, i) => (
+              <div
+                key={team?.id ?? i}
+                className="flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2.5"
+              >
+                {team?.logo_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={team.logo_url} alt="" className="h-7 w-7 flex-shrink-0 object-contain" />
+                )}
+                <span className="text-sm font-semibold text-ink">
+                  {team?.school_name ?? "Unknown team"}
+                </span>
+                <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  {i === 0 ? "Regular" : "Bonus"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-muted">
+            This week has kicked off — the bonus pick can no longer be changed or cleared. Both
+            teams must win for this entry to advance.
+          </p>
+        </div>
+      ) : teamOptions.length === 0 ? (
         <p className="text-sm text-muted">No SEC games scheduled this week.</p>
       ) : (
         <BonusTeamSelect
@@ -207,6 +269,7 @@ export default async function BonusTeamSelectPage({
           weekNumber={weekNumber}
           teamOptions={teamOptions}
           existingRegularTeamId={existingRegularTeam?.id ?? null}
+          existingBonusTeamId={existingBonusTeamId}
         />
       )}
     </main>

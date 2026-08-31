@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { saveBonusPick } from "@/app/actions/survivor-bonus";
+import { saveBonusPick, clearBonusPick } from "@/app/actions/survivor-bonus";
 import { OpponentLine } from "@/app/components/MatchupLine";
 
 export type TeamOption = {
@@ -97,16 +97,18 @@ export default function BonusTeamSelect({
   weekNumber,
   teamOptions,
   existingRegularTeamId,
+  existingBonusTeamId,
 }: {
   entryId: string;
   scheduleId: string;
   weekNumber: number;
   teamOptions: TeamOption[];
   existingRegularTeamId: string | null;
+  existingBonusTeamId: string | null;
 }) {
   const [regularTeamId, setRegularTeamId] = useState(existingRegularTeamId ?? "");
   const [editingRegular, setEditingRegular] = useState(!existingRegularTeamId);
-  const [bonusTeamId, setBonusTeamId] = useState("");
+  const [bonusTeamId, setBonusTeamId] = useState(existingBonusTeamId ?? "");
 
   const existingRegularTeam = existingRegularTeamId
     ? (teamOptions.find((t) => t.id === existingRegularTeamId) ?? null)
@@ -186,6 +188,16 @@ export default function BonusTeamSelect({
             />
           ))}
         </div>
+
+        {existingBonusTeamId && (
+          <button
+            type="submit"
+            formAction={clearBonusPick}
+            className="mt-3 text-xs font-medium text-dead hover:underline"
+          >
+            Clear bonus pick
+          </button>
+        )}
       </div>
 
       <p className="mb-3 text-xs text-muted">Both teams must win for this entry to advance.</p>
