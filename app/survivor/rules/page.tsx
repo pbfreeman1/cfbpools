@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ENTRY_DEADLINE } from "@/lib/season";
+import { formatLongDate, formatTimeOnly } from "@/lib/formatDate";
 
 export default function SurvivorRulesPage() {
   return (
@@ -57,17 +58,9 @@ export default function SurvivorRulesPage() {
           <p className="text-muted">
             Up to 2 entries per person. Entry deadline is{" "}
             <span className="text-ink">
-              {ENTRY_DEADLINE.toLocaleDateString("en-US", {
-                weekday: "long",
-                month: "long",
-                day: "numeric",
-              })}{" "}
+              {formatLongDate(ENTRY_DEADLINE)}{" "}
               at{" "}
-              {ENTRY_DEADLINE.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-                timeZoneName: "short",
-              })}
+              {formatTimeOnly(ENTRY_DEADLINE)}
             </span>
             .
           </p>

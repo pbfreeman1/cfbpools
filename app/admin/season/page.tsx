@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { updateAppSettings } from "@/app/actions/admin-season";
+import { formatKickoff } from "@/lib/formatDate";
 
 const SEASON_PHASES = ["pre_season", "active", "complete"];
 
@@ -125,7 +126,7 @@ export default async function AdminSeasonPage({
 
         {appSettings?.updated_at && (
           <p className="text-xs text-muted">
-            Last updated {new Date(appSettings.updated_at).toLocaleString()}
+            Last updated {formatKickoff(appSettings.updated_at)}
             {updatedByName ? ` by ${updatedByName}` : ""}
           </p>
         )}

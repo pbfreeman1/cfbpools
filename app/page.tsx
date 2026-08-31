@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ENTRY_DEADLINE } from "@/lib/season";
+import { formatDeadline } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import LogoMosaic from "@/app/components/LogoMosaic";
 import PoolCardsScroller from "@/app/components/PoolCardsScroller";
@@ -30,6 +31,44 @@ export default async function Home() {
       : entryCount === 1
         ? "Add a Second Entry"
         : "Enter the Survivor Pool";
+
+  const { data: appSettings } = await supabase
+    .from("app_settings")
+    .select("current_week_id")
+    .single();
+
+  let hasPickemEntry = false;
+  let pickemWeekNumber: number | null = null;
+  let pickemEcount = 0;
+  if (appSettings?.current_week_id) {
+    const [{ data: pickemWeek }, { data: ecountRow }] = await Promise.all([
+      supabase
+        .from("schedule")
+        .select("week_number")
+        .eq("id", appSettings.current_week_id)
+        .single(),
+      supabase
+        .from("pickem_week_ecount")
+        .select("ecount")
+        .eq("schedule_id", appSettings.current_week_id)
+        .maybeSingle(),
+    ]);
+    pickemWeekNumber = pickemWeek?.week_number ?? null;
+    pickemEcount = ecountRow?.ecount ?? 0;
+
+    if (user) {
+      const { count } = await supabase
+        .from("pickem_entries")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("schedule_id", appSettings.current_week_id);
+      hasPickemEntry = (count ?? 0) > 0;
+    }
+  }
+
+  const pickemCtaLabel = hasPickemEntry
+    ? `Week ${pickemWeekNumber ?? ""} Pick'em Home`.trim()
+    : "Enter the Pick'em Pool";
 
   return (
     <main className="relative isolate flex min-h-[100svh] flex-col overflow-hidden bg-app">
@@ -75,12 +114,7 @@ export default async function Home() {
                 </div>
                 <div className="text-right">
                   <p className="font-data text-lg font-bold leading-none text-ink sm:text-xl">
-                    {ENTRY_DEADLINE.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
+                    {formatDeadline(ENTRY_DEADLINE)}
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
                     Entry deadline
@@ -108,38 +142,39 @@ export default async function Home() {
                 <h2 className="font-display text-2xl font-bold uppercase tracking-wide text-ink">
                   Weekly Pick&apos;em Pool
                 </h2>
-                <span className="rounded-full bg-pickem-500/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-pickem-400">
-                  Coming soon
+                <span className="rounded-full bg-alive/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-alive">
+                  Open
                 </span>
               </div>
               <p className="mb-5 text-sm text-muted">
-                Pick 6 games against the spread each week. Go 6-0 to win the pot. Full details
-                coming soon.
+                Pick 6 games against the spread each week. Go 6-0 to win the pot.
               </p>
 
-              <div className="mt-auto flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
+              <div className="mb-5 flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
                 <div>
-                  <p className="font-data text-4xl font-black leading-none tabular-nums text-muted sm:text-5xl">
-                    6
+                  <p className="font-data text-4xl font-black leading-none tabular-nums text-ink sm:text-5xl">
+                    {pickemEcount}
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    Picks per week
+                    Total Entries This Week
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-data text-lg font-bold leading-none text-muted sm:text-xl">
+                  <p className="font-data text-lg font-bold leading-none text-ink sm:text-xl">
                     Unlimited Entries
                   </p>
                   <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    
+                    Enter as many as you like
                   </p>
                 </div>
               </div>
-              <div className="mt-5 rounded-lg border border-dashed border-pickem-500/40 bg-pickem-500/5 px-6 py-4 text-center">
-                <p className="font-display text-sm font-bold uppercase tracking-wide text-pickem-400">
-                  Opens for entries Aug 31
-                </p>
-              </div>
+
+              <Link
+                href="/pickem"
+                className="mt-auto block rounded-lg bg-pickem-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-pickem-500/20 transition hover:bg-pickem-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pickem-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              >
+                {pickemCtaLabel}
+              </Link>
             </section>
           </PoolCardsScroller>
         </div>

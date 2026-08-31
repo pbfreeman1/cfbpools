@@ -14,6 +14,15 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string }[] }[] 
     ],
   },
   {
+    label: "Pick'em",
+    items: [
+      { href: "/admin/pickem", label: "Overview" },
+      { href: "/admin/pickem/week", label: "Week Setup" },
+      { href: "/admin/pickem/entries", label: "Entries" },
+      { href: "/admin/pickem/exclusions", label: "Exclusions" },
+    ],
+  },
+  {
     label: "Site",
     items: [
       { href: "/admin/users", label: "Users" },
@@ -39,9 +48,13 @@ export default function AdminNav() {
             {group.label}
           </span>
           {group.items.map((item) => {
+            // "/admin" and "/admin/pickem" are index routes that are also a
+            // literal prefix of their own siblings (e.g. "/admin/pickem/week")
+            // — exclude them from the startsWith fallback so only the exact
+            // route lights up, not both the index and the specific page.
             const active =
               pathname === item.href ||
-              (item.href !== "/admin" && pathname.startsWith(item.href));
+              (item.href !== "/admin" && item.href !== "/admin/pickem" && pathname.startsWith(item.href));
             return (
               <Link
                 key={item.href}

@@ -151,6 +151,67 @@ export function bonusPickConfirmationEmail({
   `);
 }
 
+export type PickemEmailPick = { gameLabel: string; teamName: string; spreadLabel: string };
+
+export function pickemEntryConfirmationEmail({
+  firstName,
+  entryName,
+  weekNumber,
+  picks,
+}: {
+  firstName: string;
+  entryName: string;
+  weekNumber: number;
+  picks: PickemEmailPick[];
+}) {
+  const picksHtml = picks
+    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName} ${p.spreadLabel}</strong></li>`)
+    .join("");
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">You're in — Pick'em Week ${weekNumber}</h1>
+    <p>Hi ${firstName},</p>
+    <p>Your entry <strong>${entryName}</strong> is set for Week ${weekNumber}:</p>
+    <ul style="padding-left: 20px; line-height: 1.6;">${picksHtml}</ul>
+    <p>Entries are unlimited — enter as many times as you'd like each week.</p>
+    <p>The leaderboard and live scores will update as games kick off.</p>
+    <p>You can still edit any pick on a game that hasn't kicked off yet — just go to <a href="https://cfbpools.com/pickem" style="color: #4C7EFF;">the Pick'em home page</a> and open this entry.</p>
+    <p><a href="https://cfbpools.com/pickem" style="color: #4C7EFF;">View the Pick&apos;em pool &rarr;</a></p>
+  `);
+}
+
+export function adminNewPickemEntryEmail({
+  firstName,
+  lastName,
+  email,
+  entryName,
+  weekNumber,
+  picks,
+  createdAt,
+}: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  entryName: string;
+  weekNumber: number;
+  picks: PickemEmailPick[];
+  createdAt: string;
+}) {
+  const picksHtml = picks
+    .map((p) => `<li>${p.gameLabel}: <strong>${p.teamName} ${p.spreadLabel}</strong></li>`)
+    .join("");
+  return wrapper(`
+    <h1 style="font-size: 18px; margin: 0 0 12px;">New Pick&apos;em entry</h1>
+    <table style="border-collapse: collapse;">
+      ${detailRow("Entry", entryName)}
+      ${detailRow("Account", `${firstName} ${lastName} (${email})`)}
+      ${detailRow("Pool", `Pick'em — Week ${weekNumber}`)}
+      ${detailRow("Created", createdAt)}
+    </table>
+    <p style="margin-top: 12px; font-size: 13px; color: #8B93A7;">Picks:</p>
+    <ul style="padding-left: 20px; line-height: 1.6;">${picksHtml}</ul>
+  `);
+}
+
 const detailRow = (label: string, value: string) => `
   <tr>
     <td style="padding: 4px 12px 4px 0; color: #8B93A7; font-size: 13px; white-space: nowrap; vertical-align: top;">${label}</td>

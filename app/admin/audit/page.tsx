@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { formatKickoff } from "@/lib/formatDate";
 
 type TeamRef = { school_name: string; short_name: string | null; logo_url: string | null };
 
@@ -149,7 +150,7 @@ export default async function AdminAuditPage({
           return (
             <div key={row.id} className="grid grid-cols-[auto_1fr_1fr_auto_auto] items-center gap-3 px-4 py-2.5">
               <span className="whitespace-nowrap text-xs text-muted">
-                {new Date(row.changed_at).toLocaleString()}
+                {formatKickoff(row.changed_at)}
               </span>
               <span className="text-sm text-ink">
                 {entry ? entry.entry_name || `Entry ${entry.entry_number}` : row.entry_id}

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
 import { GameMatchupLine } from "@/app/components/MatchupLine";
 import WeekSelectorStrip from "@/app/components/WeekSelectorStrip";
+import { formatScheduleRow } from "@/lib/formatDate";
 
 type TeamRef = {
   id: string;
@@ -268,13 +269,7 @@ export default async function SchedulePage({
                       />
                       <div className="flex flex-col items-end gap-1 text-right">
                         <span className="text-xs text-muted">
-                          {new Date(g.kickoff_time).toLocaleString("en-US", {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
+                          {formatScheduleRow(g.kickoff_time)}
                         </span>
                         {isFinal ? (
                           <span className="font-data text-sm font-semibold text-ink">

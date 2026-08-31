@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { SEASON } from "@/lib/season";
 import { GameMatchupLine } from "@/app/components/MatchupLine";
+import { formatWeekdayTime } from "@/lib/formatDate";
 
 export default async function MatchupStrip() {
   const supabase = await createClient();
@@ -54,7 +55,6 @@ export default async function MatchupStrip() {
         {secGames.map((g) => {
           const home = g.home_team as unknown as TeamRef;
           const away = g.away_team as unknown as TeamRef;
-          const kickoff = new Date(g.kickoff_time);
           const isFinal = g.status === "final";
 
           const homeWon = isFinal && g.home_score !== null && g.away_score !== null && g.home_score > g.away_score;
@@ -72,13 +72,7 @@ export default async function MatchupStrip() {
                 awayWon={awayWon}
               />
               <p className="font-data text-xs text-muted">
-                {isFinal
-                  ? `Final ${g.away_score}-${g.home_score}`
-                  : kickoff.toLocaleString("en-US", {
-                      weekday: "short",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
+                {isFinal ? `Final ${g.away_score}-${g.home_score}` : formatWeekdayTime(g.kickoff_time)}
               </p>
             </div>
           );

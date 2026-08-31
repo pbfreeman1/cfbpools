@@ -1,17 +1,31 @@
-// Syncs FBS teams, the regular-season week calendar, and the full game
-// schedule from collegefootballdata.com into master_teams / schedule / games.
-// Also backfills a lightweight master_teams row (name + logo, conference:
-// "FCS") for any FCS team an SEC team actually plays, so those games aren't
-// silently dropped — see the "3a." step below.
+// Syncs FBS + FCS teams, the regular-season week calendar, the full game
+// schedule (FBS and FCS games; DII/DIII/NAIA excluded), and current betting
+// lines (into games.home_spread) from collegefootballdata.com into
+// master_teams / schedule / games.
+// FCS teams are tagged conference: "FCS" (a sentinel the Survivor pool's
+// FCS-opponent eligibility check keys on — see step 1b). The narrow "3a."
+// backfill below predates the general FCS team sync and is now redundant
+// but left in place.
 //
-// Does NOT sync betting spreads — those are loaded weekly by the admin closer
-// to game day, per the CFBPools workflow (spreads aren't available far in
-// advance, and the admin curates which 6 games are eligible for Pickem).
+// Lines are a best-effort snapshot at sync time — CFBD often has no line
+// posted yet for games far from kickoff (home_spread just stays null for
+// those), which is why this is meant to be run manually close to the admin's
+// weekly Pickem review rather than relied on far in advance. Once a game is
+// selected into that week's Pickem pool via /admin/pickem/week, its spread is
+// locked into pickem_spread_override separately — this sync only ever writes
+// home_spread, so a later re-run can never move a game's line out from under
+// an admin who already locked it in.
 //
 // Invoke with a POST body of { "year": 2026 } (defaults to the current year).
 // Add "triggered_by": "<admin user id>" when invoking manually from the admin
 // portal so the sync_logs row records who kicked it off; cron invocations
 // omit it and are logged with triggered_by = null.
+// Add "week": <n> to scope the /games and /lines calls to a single CFBD week
+// (used by the "Sync lines from CFBD" button on /admin/pickem/week, so a
+// Tuesday-review refresh only touches that week's games instead of the whole
+// season) — /teams/fbs and /calendar always stay full-season since neither is
+// week-specific. Omit "week" (as /admin/system's full sync does) to sync
+// every week's games/lines as before.
 // Safe to re-run: everything is upserted on its CFBD id, so running this
 // again just refreshes scores/status for games already in the table.
 
@@ -64,6 +78,12 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const season = body.year ?? new Date().getFullYear();
   const triggeredBy: string | null = body.triggered_by ?? null;
+  // Optional week scope — when set, only that week's /games and /lines are
+  // fetched (both cheap, both safe to re-run repeatedly for one week at a
+  // time from the Pickem admin page). /teams/fbs and /calendar stay
+  // full-season regardless: they aren't week-specific and are cheap either way.
+  const week: number | null = body.week ?? null;
+  const weekParam = week ? `&week=${week}` : "";
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -107,6 +127,51 @@ Deno.serve(async (req) => {
       );
       if (error) throw new Error(`master_teams upsert failed for ${t.school}: ${error.message}`);
       teamsSynced++;
+    }
+
+    // 1b. FCS teams — real FCS matchups (Thursday-night openers, FBS-vs-FCS
+    // non-conference games) are valid Pickem games, so their teams need
+    // master_teams rows too. Asking CFBD only for classification=fcs keeps
+    // DII/DIII/NAIA out, same as the FBS call above.
+    //
+    // conference is deliberately set to the "FCS" sentinel rather than the
+    // team's real FCS conference: the Survivor pool's "opponent is FCS =
+    // ineligible pick" rule keys on exactly `conference === "FCS"` in ~6
+    // places (pick UI, bonus UI, schedule page, and both server actions —
+    // see CLAUDE.md). Storing a real conference name here would silently
+    // make SEC-vs-FCS games look like valid Survivor picks. This also makes
+    // the narrow step-3a backfill below fully redundant, though it's left
+    // in place.
+    const fcsTeamsListRes = await fetch(`${CFBD_BASE}/teams?year=${season}&classification=fcs`, {
+      headers: cfbdHeaders(CFBD_API_KEY),
+    });
+    if (!fcsTeamsListRes.ok) {
+      throw new Error(
+        `CFBD /teams (fcs) failed: ${fcsTeamsListRes.status} ${await fcsTeamsListRes.text()}`
+      );
+    }
+    const fcsTeamsList = await fcsTeamsListRes.json();
+
+    let fcsTeamsPopulated = 0;
+    for (const t of fcsTeamsList) {
+      const { error } = await supabase.from("master_teams").upsert(
+        {
+          cfbd_team_id: t.id,
+          school_name: t.school,
+          short_name: t.abbreviation ?? t.school,
+          mascot: t.mascot ?? null,
+          conference: "FCS",
+          logo_url: Array.isArray(t.logos) ? t.logos[0] ?? null : null,
+          primary_color: t.color ?? null,
+          secondary_color: t.alt_color ?? null,
+        },
+        { onConflict: "cfbd_team_id" }
+      );
+      if (error) {
+        throw new Error(`master_teams upsert failed for FCS team ${t.school}: ${error.message}`);
+      }
+      teamsSynced++;
+      fcsTeamsPopulated++;
     }
 
     // 2. Schedule — regular season weeks only (postseason/bowls are a
@@ -153,19 +218,38 @@ Deno.serve(async (req) => {
       teamRows.filter((r) => r.conference === "SEC").map((r) => r.cfbd_team_id)
     );
 
-    // 3. Games — regular season, FBS classification only. Without this filter,
-    // CFBD returns games across every division (FCS, DII, etc.), which is why
-    // the first run had ~877 skipped games that were pure FCS-vs-FCS matchups
-    // with nothing to do with our FBS-only master_teams table.
-    // Spreads are intentionally left null here.
-    const gamesRes = await fetch(
-      `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs`,
-      { headers: cfbdHeaders(CFBD_API_KEY) }
-    );
-    if (!gamesRes.ok) {
-      throw new Error(`CFBD /games failed: ${gamesRes.status} ${await gamesRes.text()}`);
+    // 3. Games — regular season, FBS **and** FCS classifications. The
+    // classification filter still matters: without it CFBD returns every
+    // division (DII, DIII, NAIA...), which is what caused the ~877-game
+    // flood on the first run. FBS+FCS is the intended set — real FCS games
+    // (e.g. Thursday openers) are selectable Pickem games; anything lower
+    // still has no master_teams row and gets skipped in the loop below.
+    // Spreads are populated separately by the lines sync below (step 4).
+    const [fbsGamesRes, fcsGamesRes] = await Promise.all([
+      fetch(`${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs${weekParam}`, {
+        headers: cfbdHeaders(CFBD_API_KEY),
+      }),
+      fetch(`${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fcs${weekParam}`, {
+        headers: cfbdHeaders(CFBD_API_KEY),
+      }),
+    ]);
+    if (!fbsGamesRes.ok) {
+      throw new Error(`CFBD /games (fbs) failed: ${fbsGamesRes.status} ${await fbsGamesRes.text()}`);
     }
-    const games = await gamesRes.json();
+    if (!fcsGamesRes.ok) {
+      throw new Error(`CFBD /games (fcs) failed: ${fcsGamesRes.status} ${await fcsGamesRes.text()}`);
+    }
+    const fbsGames = await fbsGamesRes.json();
+    const fcsGames = await fcsGamesRes.json();
+
+    // An FBS-vs-FCS game appears in both result sets — de-dupe on CFBD game
+    // id (the payload is identical from either query).
+    // deno-lint-ignore no-explicit-any
+    const gamesById = new Map<number, any>();
+    for (const g of [...fbsGames, ...fcsGames]) gamesById.set(g.id, g);
+    const games = [...gamesById.values()];
+    const fbsGamesFetched = fbsGames.length;
+    const fcsGamesFetched = fcsGames.length;
 
     // 3a. An SEC team's FCS opponent has no master_teams row (only FBS teams
     // are synced above), so without a backfill those games would silently
@@ -295,6 +379,48 @@ Deno.serve(async (req) => {
       gamesSynced++;
     }
 
+    // 4. Lines — current betting spreads, matched on cfbd_game_id (no team-id
+    // translation needed, unlike the games loop above). Non-fatal: the
+    // games/teams/schedule sync above is more critical and has already
+    // succeeded by this point, so a CFBD /lines outage shouldn't fail the
+    // whole run — same pattern as the FCS opponent backfill in step 3a.
+    let linesSynced = 0;
+    let linesSyncError: string | null = null;
+    try {
+      const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular${weekParam}`, {
+        headers: cfbdHeaders(CFBD_API_KEY),
+      });
+      if (!linesRes.ok) {
+        throw new Error(`CFBD /lines failed: ${linesRes.status} ${await linesRes.text()}`);
+      }
+      const linesGames = await linesRes.json();
+
+      for (const g of linesGames) {
+        const providerLines: { provider: string; spread: string }[] = g.lines ?? [];
+        if (providerLines.length === 0) continue; // no book has posted a line yet — leave home_spread null
+
+        // Prefer the consensus line; fall back to whichever sportsbook is first.
+        const chosen = providerLines.find((l) => l.provider === "consensus") ?? providerLines[0];
+        const spread = Number(chosen.spread);
+        if (chosen.spread == null || Number.isNaN(spread)) continue;
+
+        // Already in our sign convention (positive = home underdog, negative
+        // = home favored) — written straight into home_spread, never into
+        // pickem_spread_override, which only the admin's week-setup save can
+        // set.
+        const { data: updated, error } = await supabase
+          .from("games")
+          .update({ home_spread: spread })
+          .eq("cfbd_game_id", g.id)
+          .select("id");
+        if (error) throw new Error(`games spread update failed for game ${g.id}: ${error.message}`);
+        if (updated && updated.length > 0) linesSynced++;
+      }
+    } catch (err) {
+      linesSyncError = (err as Error).message;
+      console.error("[cfbd-sync] Lines sync failed:", linesSyncError);
+    }
+
     await finishSyncLog(supabase, syncLogId, {
       status: "success",
       completed_at: new Date().toISOString(),
@@ -304,15 +430,22 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         season,
+        week,
         teamsSynced,
+        fcsTeamsPopulated,
         fcsTeamsSynced,
         weeksSynced,
+        fbsGamesFetched,
+        fcsGamesFetched,
+        gamesFetchedTotal: games.length,
         gamesSynced,
         gamesSkipped,
         skippedNoWeek,
         skippedNoHomeTeam,
         skippedNoAwayTeam,
         sampleSkips,
+        linesSynced,
+        ...(linesSyncError ? { linesSyncError } : {}),
       }),
       { headers: { "Content-Type": "application/json" } }
     );

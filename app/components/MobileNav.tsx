@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-type NavLinkItem = { href: string; label: string; disabled?: boolean };
+type NavLinkItem =
+  | { href: string; label: string; disabled?: boolean; action?: undefined }
+  | { action: () => void | Promise<void>; label: string; href?: undefined; disabled?: undefined };
 
 export default function MobileNav({ links }: { links: NavLinkItem[] }) {
   const [open, setOpen] = useState(false);
@@ -51,7 +53,16 @@ export default function MobileNav({ links }: { links: NavLinkItem[] }) {
         }`}
       >
         {links.map((link) =>
-          link.disabled ? (
+          link.action ? (
+            <form key={link.label} action={link.action}>
+              <button
+                type="submit"
+                className="relative font-display text-3xl uppercase tracking-wide text-ink transition after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-0 after:bg-gold-400 after:transition-all after:duration-200 hover:text-gold-400 hover:after:w-full focus-visible:text-gold-400 focus-visible:outline-none focus-visible:after:w-full"
+              >
+                {link.label}
+              </button>
+            </form>
+          ) : link.disabled ? (
             <span
               key={link.label}
               className="font-display text-3xl uppercase tracking-wide text-muted"
