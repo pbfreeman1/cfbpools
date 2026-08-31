@@ -236,9 +236,10 @@ type EntryPicksRpcRow = {
 
 // Per-entry pick detail for the expandable leaderboard / homepage rows.
 // Backed by get_pickem_entry_picks(), whose `kickoff_time <= now()` filter
-// is what keeps not-yet-started picks private — applied uniformly, including
-// for the viewer's own entry. Returns null on a failed fetch (distinct from
-// an empty array, which is a real entry with no started games yet).
+// keeps not-yet-started picks private — but only for other people's entries.
+// The viewer always sees every pick on their own entry (the RPC checks
+// `pickem_entries.user_id = auth.uid()`). Returns null on a failed fetch
+// (distinct from an empty array, which is a real entry with nothing to show).
 export async function getPickemEntryPicks(
   entryId: string
 ): Promise<PickemEntryPickDetail[] | null> {

@@ -126,7 +126,7 @@ export default function LeaderboardTable({
                   </span>
                 </button>
 
-                <ExpandablePicks entryId={row.entryId} open={isExpanded} />
+                <ExpandablePicks entryId={row.entryId} open={isExpanded} isOwn={row.isOwn} />
               </div>
             );
           })}

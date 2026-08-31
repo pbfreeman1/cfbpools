@@ -32,16 +32,23 @@ type EntryDetail = {
   user: { first_name: string | null; last_name: string | null; email: string | null } | null;
 };
 
+type AuditEvent = { at: string; label: string; detail: string };
+
 export default async function AdminPickemEntryDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ entryId: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; schedule_id?: string }>;
 }) {
   const { entryId } = await params;
   const query = await searchParams;
   const supabase = await createClient();
+
+  // Preserve the week filter the admin arrived with (item 5) on the back link.
+  const entriesHref = query.schedule_id
+    ? `/admin/pickem/entries?schedule_id=${encodeURIComponent(query.schedule_id)}`
+    : "/admin/pickem/entries";
 
   const { data: entryData } = await supabase
     .from("pickem_entries")
@@ -56,7 +63,7 @@ export default async function AdminPickemEntryDetailPage({
   if (!entry) {
     return (
       <div className="mx-auto max-w-3xl">
-        <Link href="/admin/pickem/entries" className="mb-4 inline-block text-sm text-gold-400 hover:underline">
+        <Link href={entriesHref} className="mb-4 inline-block text-sm text-gold-400 hover:underline">
           &larr; Entries
         </Link>
         <p className="rounded-lg border border-edge bg-surface p-4 text-center text-sm text-muted">
@@ -66,24 +73,109 @@ export default async function AdminPickemEntryDetailPage({
     );
   }
 
-  const [{ data: week }, { data: gamesData }, { data: pickRows }] = await Promise.all([
-    supabase.from("schedule").select("week_number, label").eq("id", entry.schedule_id).single(),
-    supabase
-      .from("games")
-      .select(
-        `id, kickoff_time, venue, home_spread, pickem_spread_override,
-         home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name),
-         away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name)`
-      )
-      .eq("schedule_id", entry.schedule_id)
-      .eq("pickem_selected", true)
-      .order("kickoff_time"),
-    supabase.from("pickem_picks").select("id, game_id, team_id").eq("entry_id", entryId),
-  ]);
+  const [{ data: week }, { data: gamesData }, { data: pickRows }, { data: entryLog }, { data: pickLog }] =
+    await Promise.all([
+      supabase.from("schedule").select("week_number, label").eq("id", entry.schedule_id).single(),
+      supabase
+        .from("games")
+        .select(
+          `id, kickoff_time, venue, home_spread, pickem_spread_override,
+           home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name),
+           away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name)`
+        )
+        .eq("schedule_id", entry.schedule_id)
+        .eq("pickem_selected", true)
+        .order("kickoff_time"),
+      supabase.from("pickem_picks").select("id, game_id, team_id").eq("entry_id", entryId),
+      supabase
+        .from("pickem_entries_log")
+        .select("entry_name, version, changed_at")
+        .eq("entry_id", entryId)
+        .order("version"),
+      supabase
+        .from("pickem_picks_log")
+        .select("game_id, team_id, version, changed_at")
+        .eq("entry_id", entryId)
+        .order("game_id")
+        .order("version"),
+    ]);
 
   const games = (gamesData ?? []) as unknown as GameRow[];
   const pickByGame = new Map((pickRows ?? []).map((p) => [p.game_id, p]));
   const ownerName = [entry.user?.first_name, entry.user?.last_name].filter(Boolean).join(" ");
+
+  // ---- Audit trail (item 4) -------------------------------------------------
+  // Built entirely from the two _log tables — no new schema. The trigger
+  // re-logs a row on every source-table update, so the grading job (which
+  // writes `result` onto each pick) produces version bumps that aren't real
+  // edits. We surface a row only when its value actually changed from the
+  // prior version for the same key (team_id per game, entry_name for the
+  // entry). Admin pick *clears* are deletes — not in pickem_picks_log — so a
+  // cleared pick simply stops appearing; those are in the admin action log.
+  const logGameIds = new Set<string>((pickLog ?? []).map((r) => r.game_id));
+  // A pick's team is always one of its game's two teams, so resolving every
+  // referenced game is enough to name both games and teams. Games later
+  // de-selected from Pick'em won't be in `games` — fetch those separately.
+  const missingGameIds = [...logGameIds].filter((id) => !games.some((g) => g.id === id));
+  const { data: extraGames } = missingGameIds.length
+    ? await supabase
+        .from("games")
+        .select(
+          `id, home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name),
+           away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name)`
+        )
+        .in("id", missingGameIds)
+    : { data: [] };
+
+  const gameLabelById = new Map<string, string>();
+  const teamNameById = new Map<string, string>();
+  const registerGame = (g: {
+    id: string;
+    home_team: TeamRef;
+    away_team: TeamRef;
+  }) => {
+    const homeName = g.home_team.short_name || g.home_team.school_name;
+    const awayName = g.away_team.short_name || g.away_team.school_name;
+    gameLabelById.set(g.id, `${awayName} @ ${homeName}`);
+    teamNameById.set(g.home_team.id, homeName);
+    teamNameById.set(g.away_team.id, awayName);
+  };
+  games.forEach((g) => registerGame(g));
+  ((extraGames ?? []) as unknown as { id: string; home_team: TeamRef; away_team: TeamRef }[]).forEach(
+    (g) => registerGame(g)
+  );
+
+  const auditEvents: AuditEvent[] = [];
+
+  let prevEntryName: string | undefined;
+  for (const r of (entryLog ?? []).slice().sort((a, b) => a.version - b.version)) {
+    if (prevEntryName === undefined) {
+      auditEvents.push({ at: r.changed_at, label: "Entry created", detail: `Named “${r.entry_name}”` });
+    } else if (r.entry_name !== prevEntryName) {
+      auditEvents.push({ at: r.changed_at, label: "Renamed", detail: `→ “${r.entry_name}”` });
+    }
+    prevEntryName = r.entry_name;
+  }
+
+  // pickLog arrives ordered by (game_id, version) — walk each game's rows and
+  // only emit when the picked team actually changed.
+  const prevPickTeam = new Map<string, string>();
+  for (const r of pickLog ?? []) {
+    const matchup = gameLabelById.get(r.game_id) ?? "Unknown game";
+    const team = teamNameById.get(r.team_id) ?? "Unknown team";
+    const prev = prevPickTeam.get(r.game_id);
+    if (prev === undefined) {
+      auditEvents.push({ at: r.changed_at, label: "Pick made", detail: `${matchup} — ${team}` });
+    } else if (prev !== r.team_id) {
+      auditEvents.push({ at: r.changed_at, label: "Pick changed", detail: `${matchup} — ${team}` });
+    }
+    prevPickTeam.set(r.game_id, r.team_id);
+  }
+
+  auditEvents.sort((a, b) => a.at.localeCompare(b.at));
+  const totalEdits = auditEvents.filter(
+    (e) => e.label === "Renamed" || e.label === "Pick changed"
+  ).length;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -217,6 +309,33 @@ export default async function AdminPickemEntryDetailPage({
             );
           })}
         </div>
+      )}
+
+      <h2 id="audit" className="mb-1 mt-10 scroll-mt-20 font-display text-lg font-semibold uppercase tracking-wide text-ink">
+        Audit trail
+      </h2>
+      <p className="mb-3 text-xs text-muted">
+        {totalEdits === 0
+          ? "No changes since this entry was created."
+          : `${totalEdits} change${totalEdits === 1 ? "" : "s"} since creation.`}{" "}
+        Pick clears made by an admin are recorded separately in the admin action log.
+      </p>
+
+      {auditEvents.length === 0 ? (
+        <p className="text-sm text-muted">Nothing logged for this entry yet.</p>
+      ) : (
+        <ol className="divide-y divide-edge rounded-lg border border-edge bg-surface">
+          {auditEvents.map((e, i) => (
+            <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2.5">
+              <span className="text-sm text-ink">
+                <span className="font-medium text-gold-400">{e.label}</span>
+                {" — "}
+                {e.detail}
+              </span>
+              <span className="whitespace-nowrap text-xs text-muted">{formatKickoff(e.at)}</span>
+            </li>
+          ))}
+        </ol>
       )}
     </div>
   );

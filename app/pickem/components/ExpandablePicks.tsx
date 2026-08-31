@@ -15,8 +15,10 @@ import { formatScheduleRow } from "@/lib/formatDate";
 // fetch is lazy — fired the first time `open` goes true — and cached, so
 // the 45s leaderboard poll never refetches it.
 //
-// Games that haven't kicked off are never returned by get_pickem_entry_picks,
-// so there's nothing to render for them here — no placeholder row.
+// get_pickem_entry_picks hides not-yet-started games ONLY when the row
+// belongs to another user — the viewer always sees every pick on their own
+// entry, kickoff or not. Pass `isOwn` so the empty-state copy matches which
+// case a zero-length result actually means.
 
 type PickState = "final-win" | "final-loss" | "live-win" | "live-loss";
 
@@ -48,9 +50,11 @@ function resultLabel(pick: PickemEntryPickDetail): string {
 export function ExpandablePicks({
   entryId,
   open,
+  isOwn = false,
 }: {
   entryId: string;
   open: boolean;
+  isOwn?: boolean;
 }) {
   const [picks, setPicks] = useState<PickemEntryPickDetail[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -110,7 +114,9 @@ export function ExpandablePicks({
 
       {!loading && !failed && picks?.length === 0 && (
         <p className="px-1 py-2 text-xs text-muted">
-          No games in this entry have started yet.
+          {isOwn
+            ? "No picks saved for this entry yet."
+            : "No games in this entry have started yet."}
         </p>
       )}
 

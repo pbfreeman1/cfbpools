@@ -75,7 +75,7 @@ export default function OwnEntryCard({
         {open ? "Hide picks" : "Show picks"}
       </button>
 
-      <ExpandablePicks entryId={entryId} open={open} />
+      <ExpandablePicks entryId={entryId} open={open} isOwn />
     </div>
   );
 }
