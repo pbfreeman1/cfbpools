@@ -1,11 +1,11 @@
-// Syncs FBS + FCS teams, the regular-season week calendar, the full game
-// schedule (FBS and FCS games; DII/DIII/NAIA excluded), and current betting
-// lines (into games.home_spread) from collegefootballdata.com into
-// master_teams / schedule / games.
-// FCS teams are tagged conference: "FCS" (a sentinel the Survivor pool's
-// FCS-opponent eligibility check keys on — see step 1b). The narrow "3a."
-// backfill below predates the general FCS team sync and is now redundant
-// but left in place.
+// Syncs FBS teams, the regular-season week calendar, the full game schedule
+// (FBS-classification games only — DII/DIII/NAIA and standalone FCS-vs-FCS
+// matchups are not synced), and current betting lines (into games.home_spread)
+// from collegefootballdata.com into master_teams / schedule / games.
+// The one FCS exception: step 3a below backfills a lightweight master_teams
+// row (name + logo, conference: "FCS" sentinel) for any FCS team an SEC team
+// actually plays, so those SEC-vs-FCS games still appear on the schedule /
+// Survivor pick UI (correctly marked ineligible) instead of silently dropping.
 //
 // Lines are a best-effort snapshot at sync time — CFBD often has no line
 // posted yet for games far from kickoff (home_spread just stays null for
@@ -129,51 +129,6 @@ Deno.serve(async (req) => {
       teamsSynced++;
     }
 
-    // 1b. FCS teams — real FCS matchups (Thursday-night openers, FBS-vs-FCS
-    // non-conference games) are valid Pickem games, so their teams need
-    // master_teams rows too. Asking CFBD only for classification=fcs keeps
-    // DII/DIII/NAIA out, same as the FBS call above.
-    //
-    // conference is deliberately set to the "FCS" sentinel rather than the
-    // team's real FCS conference: the Survivor pool's "opponent is FCS =
-    // ineligible pick" rule keys on exactly `conference === "FCS"` in ~6
-    // places (pick UI, bonus UI, schedule page, and both server actions —
-    // see CLAUDE.md). Storing a real conference name here would silently
-    // make SEC-vs-FCS games look like valid Survivor picks. This also makes
-    // the narrow step-3a backfill below fully redundant, though it's left
-    // in place.
-    const fcsTeamsListRes = await fetch(`${CFBD_BASE}/teams?year=${season}&classification=fcs`, {
-      headers: cfbdHeaders(CFBD_API_KEY),
-    });
-    if (!fcsTeamsListRes.ok) {
-      throw new Error(
-        `CFBD /teams (fcs) failed: ${fcsTeamsListRes.status} ${await fcsTeamsListRes.text()}`
-      );
-    }
-    const fcsTeamsList = await fcsTeamsListRes.json();
-
-    let fcsTeamsPopulated = 0;
-    for (const t of fcsTeamsList) {
-      const { error } = await supabase.from("master_teams").upsert(
-        {
-          cfbd_team_id: t.id,
-          school_name: t.school,
-          short_name: t.abbreviation ?? t.school,
-          mascot: t.mascot ?? null,
-          conference: "FCS",
-          logo_url: Array.isArray(t.logos) ? t.logos[0] ?? null : null,
-          primary_color: t.color ?? null,
-          secondary_color: t.alt_color ?? null,
-        },
-        { onConflict: "cfbd_team_id" }
-      );
-      if (error) {
-        throw new Error(`master_teams upsert failed for FCS team ${t.school}: ${error.message}`);
-      }
-      teamsSynced++;
-      fcsTeamsPopulated++;
-    }
-
     // 2. Schedule — regular season weeks only (postseason/bowls are a
     // separate concern from the weekly Survivor/Pickem cadence).
     const calRes = await fetch(`${CFBD_BASE}/calendar?year=${season}`, {
@@ -218,38 +173,19 @@ Deno.serve(async (req) => {
       teamRows.filter((r) => r.conference === "SEC").map((r) => r.cfbd_team_id)
     );
 
-    // 3. Games — regular season, FBS **and** FCS classifications. The
-    // classification filter still matters: without it CFBD returns every
-    // division (DII, DIII, NAIA...), which is what caused the ~877-game
-    // flood on the first run. FBS+FCS is the intended set — real FCS games
-    // (e.g. Thursday openers) are selectable Pickem games; anything lower
-    // still has no master_teams row and gets skipped in the loop below.
+    // 3. Games — regular season, FBS classification only. Without this filter,
+    // CFBD returns games across every division (FCS, DII, etc.), which is why
+    // the first run had ~877 skipped games that were pure FCS-vs-FCS matchups
+    // with nothing to do with our FBS-only master_teams table.
     // Spreads are populated separately by the lines sync below (step 4).
-    const [fbsGamesRes, fcsGamesRes] = await Promise.all([
-      fetch(`${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs${weekParam}`, {
-        headers: cfbdHeaders(CFBD_API_KEY),
-      }),
-      fetch(`${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fcs${weekParam}`, {
-        headers: cfbdHeaders(CFBD_API_KEY),
-      }),
-    ]);
-    if (!fbsGamesRes.ok) {
-      throw new Error(`CFBD /games (fbs) failed: ${fbsGamesRes.status} ${await fbsGamesRes.text()}`);
+    const gamesRes = await fetch(
+      `${CFBD_BASE}/games?year=${season}&seasonType=regular&classification=fbs${weekParam}`,
+      { headers: cfbdHeaders(CFBD_API_KEY) }
+    );
+    if (!gamesRes.ok) {
+      throw new Error(`CFBD /games failed: ${gamesRes.status} ${await gamesRes.text()}`);
     }
-    if (!fcsGamesRes.ok) {
-      throw new Error(`CFBD /games (fcs) failed: ${fcsGamesRes.status} ${await fcsGamesRes.text()}`);
-    }
-    const fbsGames = await fbsGamesRes.json();
-    const fcsGames = await fcsGamesRes.json();
-
-    // An FBS-vs-FCS game appears in both result sets — de-dupe on CFBD game
-    // id (the payload is identical from either query).
-    // deno-lint-ignore no-explicit-any
-    const gamesById = new Map<number, any>();
-    for (const g of [...fbsGames, ...fcsGames]) gamesById.set(g.id, g);
-    const games = [...gamesById.values()];
-    const fbsGamesFetched = fbsGames.length;
-    const fcsGamesFetched = fcsGames.length;
+    const games = await gamesRes.json();
 
     // 3a. An SEC team's FCS opponent has no master_teams row (only FBS teams
     // are synced above), so without a backfill those games would silently
@@ -385,6 +321,7 @@ Deno.serve(async (req) => {
     // succeeded by this point, so a CFBD /lines outage shouldn't fail the
     // whole run — same pattern as the FCS opponent backfill in step 3a.
     let linesSynced = 0;
+    let linesSkippedNoLine = 0;
     let linesSyncError: string | null = null;
     try {
       const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular${weekParam}`, {
@@ -396,13 +333,24 @@ Deno.serve(async (req) => {
       const linesGames = await linesRes.json();
 
       for (const g of linesGames) {
-        const providerLines: { provider: string; spread: string }[] = g.lines ?? [];
-        if (providerLines.length === 0) continue; // no book has posted a line yet — leave home_spread null
+        const providerLines: { provider: string; spread: string | number | null }[] = g.lines ?? [];
 
-        // Prefer the consensus line; fall back to whichever sportsbook is first.
-        const chosen = providerLines.find((l) => l.provider === "consensus") ?? providerLines[0];
-        const spread = Number(chosen.spread);
-        if (chosen.spread == null || Number.isNaN(spread)) continue;
+        // Prefer the consensus line; fall back to whichever sportsbook is
+        // first. A game can have a `lines` array where no provider has a
+        // usable spread (empty array, or all-null spreads) — skip it, leave
+        // home_spread null, and log which game so a missing Pickem spread is
+        // traceable. Non-fatal, same as the gamesSkipped handling above.
+        const chosen =
+          providerLines.find((l) => l.provider === "consensus" && l.spread != null) ??
+          providerLines.find((l) => l.spread != null);
+        const spread = chosen ? Number(chosen.spread) : NaN;
+        if (!chosen || Number.isNaN(spread)) {
+          linesSkippedNoLine++;
+          console.log(
+            `[cfbd-sync] No usable spread for game ${g.id} (${g.awayTeam ?? "?"} @ ${g.homeTeam ?? "?"}, week ${g.week ?? "?"}) — leaving home_spread null`
+          );
+          continue;
+        }
 
         // Already in our sign convention (positive = home underdog, negative
         // = home favored) — written straight into home_spread, never into
@@ -432,12 +380,8 @@ Deno.serve(async (req) => {
         season,
         week,
         teamsSynced,
-        fcsTeamsPopulated,
         fcsTeamsSynced,
         weeksSynced,
-        fbsGamesFetched,
-        fcsGamesFetched,
-        gamesFetchedTotal: games.length,
         gamesSynced,
         gamesSkipped,
         skippedNoWeek,
@@ -445,6 +389,7 @@ Deno.serve(async (req) => {
         skippedNoAwayTeam,
         sampleSkips,
         linesSynced,
+        linesSkippedNoLine,
         ...(linesSyncError ? { linesSyncError } : {}),
       }),
       { headers: { "Content-Type": "application/json" } }
