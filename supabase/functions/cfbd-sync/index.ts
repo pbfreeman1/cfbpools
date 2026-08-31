@@ -385,6 +385,7 @@ Deno.serve(async (req) => {
     // succeeded by this point, so a CFBD /lines outage shouldn't fail the
     // whole run — same pattern as the FCS opponent backfill in step 3a.
     let linesSynced = 0;
+    let linesSkippedNoLine = 0;
     let linesSyncError: string | null = null;
     try {
       const linesRes = await fetch(`${CFBD_BASE}/lines?year=${season}&seasonType=regular${weekParam}`, {
@@ -396,13 +397,24 @@ Deno.serve(async (req) => {
       const linesGames = await linesRes.json();
 
       for (const g of linesGames) {
-        const providerLines: { provider: string; spread: string }[] = g.lines ?? [];
-        if (providerLines.length === 0) continue; // no book has posted a line yet — leave home_spread null
+        const providerLines: { provider: string; spread: string | number | null }[] = g.lines ?? [];
 
-        // Prefer the consensus line; fall back to whichever sportsbook is first.
-        const chosen = providerLines.find((l) => l.provider === "consensus") ?? providerLines[0];
-        const spread = Number(chosen.spread);
-        if (chosen.spread == null || Number.isNaN(spread)) continue;
+        // Prefer the consensus line; fall back to whichever sportsbook is
+        // first. A game can have a `lines` array where no provider has a
+        // usable spread (empty array, or all-null spreads) — skip it, leave
+        // home_spread null, and log which game so a missing Pickem spread is
+        // traceable. Non-fatal, same as the gamesSkipped handling above.
+        const chosen =
+          providerLines.find((l) => l.provider === "consensus" && l.spread != null) ??
+          providerLines.find((l) => l.spread != null);
+        const spread = chosen ? Number(chosen.spread) : NaN;
+        if (!chosen || Number.isNaN(spread)) {
+          linesSkippedNoLine++;
+          console.log(
+            `[cfbd-sync] No usable spread for game ${g.id} (${g.awayTeam ?? "?"} @ ${g.homeTeam ?? "?"}, week ${g.week ?? "?"}) — leaving home_spread null`
+          );
+          continue;
+        }
 
         // Already in our sign convention (positive = home underdog, negative
         // = home favored) — written straight into home_spread, never into
@@ -445,6 +457,7 @@ Deno.serve(async (req) => {
         skippedNoAwayTeam,
         sampleSkips,
         linesSynced,
+        linesSkippedNoLine,
         ...(linesSyncError ? { linesSyncError } : {}),
       }),
       { headers: { "Content-Type": "application/json" } }
