@@ -101,9 +101,9 @@ export default function LeaderboardTable({
                   aria-expanded={isExpanded}
                   className="flex w-full items-center gap-3 text-left"
                 >
-                  <span className="w-8 flex-shrink-0 text-center font-data text-sm font-semibold text-muted">
-                    #{row.rank}
-                  </span>
+                  {/* Spacer only — keeps the name/badge indent stable now that
+                      the rank number is no longer shown. */}
+                  <span className="w-8 flex-shrink-0" aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{row.entryName}</p>
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
