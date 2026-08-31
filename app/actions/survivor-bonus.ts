@@ -104,3 +104,34 @@ export async function saveBonusPick(formData: FormData) {
   revalidatePath(selectorPath);
   redirect(`/survivor?bonus_saved=1&week=${weekNumber}`);
 }
+
+export async function clearBonusPick(formData: FormData) {
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const weekNumber = Number(formData.get("weekNumber"));
+
+  const selectorPath = `/survivor/entries/${entryId}/bonus`;
+  const weekPath = `${selectorPath}/${weekNumber}`;
+
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("survivor_bonus_picks")
+    .delete()
+    .eq("entry_id", entryId)
+    .eq("schedule_id", scheduleId);
+
+  if (error) {
+    // validate_survivor_bonus_pick_delete raises "This week's bonus pick is
+    // already locked and cannot be cleared" — surfaced the same way
+    // saveBonusPick surfaces its trigger-raised errors.
+    redirect(`${weekPath}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // The unsync_survivor_bonus_pick_from_picks trigger has already flipped the
+  // synced survivor_picks row back to a plain regular pick (is_bonus_week =
+  // false, bonus_team_id = null) — nothing to do here for that.
+  revalidatePath("/survivor");
+  revalidatePath(selectorPath);
+  redirect(`${selectorPath}?cleared=${weekNumber}`);
+}

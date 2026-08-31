@@ -16,6 +16,9 @@ type WeekState = {
     bName: string;
     bLogo: string | null;
   };
+  // For "used" weeks: whether the pick's earliest kickoff has passed. An
+  // unlocked used week can still be edited/cleared.
+  usedLocked?: boolean;
 };
 
 export default async function BonusWeekSelectorPage({
@@ -23,7 +26,7 @@ export default async function BonusWeekSelectorPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; cleared?: string }>;
 }) {
   const { id: entryId } = await params;
   const sp = await searchParams;
@@ -87,10 +90,27 @@ export default async function BonusWeekSelectorPage({
     if (bonusPick) {
       const teamA = teamById.get(bonusPick.team_a_id);
       const teamB = teamById.get(bonusPick.team_b_id);
+
+      // Same lock rule as validate_survivor_bonus_pick_delete: earliest
+      // kickoff among games involving either picked team for this week.
+      const pickTeamIds = new Set([bonusPick.team_a_id, bonusPick.team_b_id]);
+      const pickKickoffs = (games ?? [])
+        .filter((g) => {
+          if (g.schedule_id !== w.id) return false;
+          const home = g.home_team as unknown as { id: string };
+          const away = g.away_team as unknown as { id: string };
+          return pickTeamIds.has(home.id) || pickTeamIds.has(away.id);
+        })
+        .map((g) => new Date(g.kickoff_time).getTime())
+        .filter((n) => !Number.isNaN(n));
+      const usedLocked =
+        eliminated || (pickKickoffs.length > 0 && Math.min(...pickKickoffs) <= nowMs);
+
       return {
         weekNumber: w.week_number,
         scheduleId: w.id,
         state: "used",
+        usedLocked,
         usedTeams: {
           aName: teamA?.school_name ?? "Unknown",
           aLogo: teamA?.logo_url ?? null,
@@ -160,6 +180,12 @@ export default async function BonusWeekSelectorPage({
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{sp.error}</p>
       )}
 
+      {sp.cleared && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Week {sp.cleared} bonus pick cleared — it&apos;s a plain regular pick again.
+        </p>
+      )}
+
       {eliminated && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">
           This entry has been eliminated and can no longer submit picks.
@@ -218,6 +244,14 @@ export default async function BonusWeekSelectorPage({
                 className="flex-shrink-0 rounded-md bg-gold-500 px-3 py-2 text-xs font-semibold text-app transition hover:bg-gold-600"
               >
                 Choose &rarr;
+              </Link>
+            )}
+            {w.state === "used" && !w.usedLocked && (
+              <Link
+                href={`/survivor/entries/${entryId}/bonus/${w.weekNumber}`}
+                className="flex-shrink-0 rounded-md border border-gold-500 px-3 py-2 text-xs font-semibold text-gold-400 transition hover:bg-gold-500/10"
+              >
+                Edit
               </Link>
             )}
           </div>
