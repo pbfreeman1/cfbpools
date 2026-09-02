@@ -10,7 +10,13 @@ export default async function SurvivorEntryPage({
   searchParams,
 }: {
   params: Promise<{ entryId: string }>;
-  searchParams: Promise<{ error?: string; saved?: string; week?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    saved?: string;
+    cleared?: string;
+    reassigned?: string;
+    week?: string;
+  }>;
 }) {
   const { entryId } = await params;
   const sp = await searchParams;
@@ -44,17 +50,8 @@ export default async function SurvivorEntryPage({
   const pickByWeek = new Map((picks ?? []).map((p) => [p.schedule_id, p]));
   const bonusWeeksUsed = (picks ?? []).filter((p) => p.is_bonus_week).length;
 
-  // Map every used team id -> the week_number it was used in, for the
-  // "Already picked in Week X" label. Built from schedule_id -> week_number
-  // below once we have `weeks`.
+  // schedule_id -> week_number, for the "Used Week X" labels.
   const weekNumberBySchedule = new Map((weeks ?? []).map((w) => [w.id, w.week_number]));
-  const usedWeekByTeamId = new Map<string, number>();
-  (picks ?? []).forEach((p) => {
-    const wn = weekNumberBySchedule.get(p.schedule_id);
-    if (wn === undefined) return;
-    usedWeekByTeamId.set(p.team_id, wn);
-    if (p.bonus_team_id) usedWeekByTeamId.set(p.bonus_team_id, wn);
-  });
 
   const scheduleIds = (weeks ?? []).map((w) => w.id);
   const { data: games } = await supabase
@@ -88,6 +85,33 @@ export default async function SurvivorEntryPage({
     primary_color: string | null;
   };
 
+  // team id -> where else this entry has already used it. `locked` is derived
+  // the same way the DB delete triggers derive it: earliest kickoff among the
+  // source week's games involving either team on that pick. A used-but-unlocked
+  // team can be reassigned to another week; a used-and-locked one can't.
+  const usedByTeamId = new Map<
+    string,
+    { weekNumber: number; locked: boolean; isBonus: boolean }
+  >();
+  (picks ?? []).forEach((p) => {
+    const wn = weekNumberBySchedule.get(p.schedule_id);
+    if (wn === undefined) return;
+    const pickTeamIds = [p.team_id, p.bonus_team_id].filter(Boolean) as string[];
+    const kickoffs = (games ?? [])
+      .filter((g) => g.schedule_id === p.schedule_id)
+      .filter((g) => {
+        const h = (g.home_team as unknown as TeamRef).id;
+        const a = (g.away_team as unknown as TeamRef).id;
+        return pickTeamIds.includes(h) || pickTeamIds.includes(a);
+      })
+      .map((g) => new Date(g.kickoff_time).getTime())
+      .filter((n) => !Number.isNaN(n));
+    const locked = eliminated || (kickoffs.length > 0 && Math.min(...kickoffs) <= now);
+    const info = { weekNumber: wn, locked, isBonus: p.is_bonus_week };
+    usedByTeamId.set(p.team_id, info);
+    if (p.bonus_team_id) usedByTeamId.set(p.bonus_team_id, info);
+  });
+
   const weeksData: WeekData[] = (weeks ?? []).map((week) => {
     const pick = pickByWeek.get(week.id);
     const weekGames = (games ?? []).filter((g) => g.schedule_id === week.id);
@@ -110,18 +134,25 @@ export default async function SurvivorEntryPage({
 
         // A team already used by THIS week's own current pick should
         // never show as "already used" — exclude it from that check.
-        const usedInWeek =
+        const usedElsewhere =
           team.id !== pick?.team_id && team.id !== pick?.bonus_team_id
-            ? usedWeekByTeamId.get(team.id)
+            ? usedByTeamId.get(team.id)
             : undefined;
 
         // An SEC team is eligible against ANY FBS opponent (any
         // conference) — only an FCS opponent makes it ineligible.
         const ineligibleFcs = opponent.conference === "FCS";
 
+        // Used elsewhere + that week not locked + eligible here => the team
+        // can be reassigned to this week (confirmation modal in PickTool).
+        const reassignable =
+          usedElsewhere !== undefined && !usedElsewhere.locked && !ineligibleFcs && !kickoffPassed;
+
         let disabledReason: string | null = null;
-        if (usedInWeek !== undefined) {
-          disabledReason = `Already picked — Week ${usedInWeek}`;
+        if (usedElsewhere !== undefined) {
+          disabledReason = usedElsewhere.locked
+            ? `Used Week ${usedElsewhere.weekNumber} (locked)`
+            : `Used Week ${usedElsewhere.weekNumber} — tap to reassign`;
         } else if (kickoffPassed) {
           disabledReason = "Game already started";
         }
@@ -135,9 +166,13 @@ export default async function SurvivorEntryPage({
           prefix: getMatchupPrefix(team.id, home.id),
           primary_color: team.primary_color,
           kickoff_time: g.kickoff_time ?? null,
-          disabled: disabledReason !== null || ineligibleFcs,
+          disabled: (disabledReason !== null && !reassignable) || ineligibleFcs,
           disabledReason,
           ineligibleFcs,
+          reassignable,
+          reassignFrom: reassignable
+            ? { weekNumber: usedElsewhere!.weekNumber, isBonus: usedElsewhere!.isBonus }
+            : null,
         });
       });
     });
@@ -233,6 +268,17 @@ export default async function SurvivorEntryPage({
       {sp.saved && (
         <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
           Pick saved.
+        </p>
+      )}
+      {sp.cleared && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Pick cleared — this week is open again.
+        </p>
+      )}
+      {sp.reassigned && (
+        <p className="mb-4 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">
+          Team reassigned to this week. The week it came from is now open — make a new pick
+          there if you want one.
         </p>
       )}
       {sp.error && (

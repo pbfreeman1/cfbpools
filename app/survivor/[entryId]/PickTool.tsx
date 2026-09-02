@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { savePick } from "@/app/actions/survivor";
+import { savePick, clearPick, reassignSurvivorTeam } from "@/app/actions/survivor";
 import { OpponentLine } from "@/app/components/MatchupLine";
 import WeekSelectorStrip from "@/app/components/WeekSelectorStrip";
 
@@ -18,6 +18,10 @@ type TeamOption = {
   disabled: boolean;
   disabledReason: string | null;
   ineligibleFcs: boolean;
+  // Used in another (unlocked) week and eligible here — selecting it opens
+  // a confirmation modal that clears that other week before writing here.
+  reassignable: boolean;
+  reassignFrom: { weekNumber: number; isBonus: boolean } | null;
 };
 
 export type WeekData = {
@@ -59,9 +63,13 @@ function TeamOptionButton({
         "flex flex-col gap-1 rounded-md border px-3 py-2.5 text-left text-sm transition " +
         (team.disabled
           ? "cursor-not-allowed border-edge bg-surface-hover opacity-60"
-          : selected
-            ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
-            : "border-edge text-ink hover:bg-surface")
+          : team.reassignable
+            ? selected
+              ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+              : "border-dashed border-gold-500/60 text-ink hover:bg-surface"
+            : selected
+              ? "border-gold-500 bg-gold-500/10 font-semibold text-gold-400"
+              : "border-edge text-ink hover:bg-surface")
       }
     >
       <span className="flex items-center gap-2">
@@ -80,12 +88,72 @@ function TeamOptionButton({
           </span>
         )}
       </span>
-      {team.disabled && !team.ineligibleFcs ? (
+      {team.reassignable ? (
+        <span className="truncate text-xs text-gold-400">{team.disabledReason}</span>
+      ) : team.disabled && !team.ineligibleFcs ? (
         <span className="truncate text-xs text-muted">{team.disabledReason}</span>
       ) : (
         <OpponentLine prefix={team.prefix} opponent={{ name: team.opponent_name, logo_url: team.opponent_logo_url }} />
       )}
     </button>
+  );
+}
+
+function ReassignModal({
+  entryId,
+  team,
+  weekNumber,
+  scheduleId,
+  onCancel,
+}: {
+  entryId: string;
+  team: TeamOption;
+  weekNumber: number;
+  scheduleId: string;
+  onCancel: () => void;
+}) {
+  const from = team.reassignFrom!;
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
+      <div className="w-full max-w-sm rounded-lg border border-edge bg-surface p-5 shadow-xl">
+        <h2 className="mb-2 text-base font-bold text-ink">Reassign {team.school_name}?</h2>
+        {from.isBonus ? (
+          <p className="mb-4 text-sm text-muted">
+            {team.school_name} is currently part of your Week {from.weekNumber} bonus pick. If you
+            continue, your <span className="font-semibold text-ink">entire</span> Week{" "}
+            {from.weekNumber} bonus pick will be cleared (both teams) and you&apos;ll need to select
+            two new bonus teams.
+          </p>
+        ) : (
+          <p className="mb-4 text-sm text-muted">
+            You&apos;re currently using {team.school_name} for Week {from.weekNumber}. If you
+            continue, your Week {from.weekNumber} pick will be cleared and you&apos;ll need to make
+            a new pick for that week.
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-edge px-4 py-2 text-sm font-medium text-ink transition hover:bg-surface-hover"
+          >
+            Cancel
+          </button>
+          <form action={reassignSurvivorTeam}>
+            <input type="hidden" name="entryId" value={entryId} />
+            <input type="hidden" name="targetScheduleId" value={scheduleId} />
+            <input type="hidden" name="teamId" value={team.id} />
+            <input type="hidden" name="weekNumber" value={weekNumber} />
+            <button
+              type="submit"
+              className="rounded-md bg-gold-500 px-4 py-2 text-sm font-semibold text-app transition hover:bg-gold-600"
+            >
+              Confirm &amp; Reassign
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -103,9 +171,11 @@ export default function PickTool({
   const [selectedWeekNumber, setSelectedWeekNumber] = useState(initialWeekNumber);
   const week = weeksData.find((w) => w.weekNumber === selectedWeekNumber) ?? weeksData[0];
   const [selectedTeam, setSelectedTeam] = useState(week?.currentPick?.team_id ?? "");
+  const [reassignTeam, setReassignTeam] = useState<TeamOption | null>(null);
 
   useEffect(() => {
     setSelectedTeam(week?.currentPick?.team_id ?? "");
+    setReassignTeam(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWeekNumber]);
 
@@ -117,6 +187,15 @@ export default function PickTool({
     const url = new URL(window.location.href);
     url.searchParams.set("week", String(weekNumber));
     window.history.replaceState(null, "", url);
+  }
+
+  function handleTeamClick(team: TeamOption) {
+    if (team.disabled) return;
+    if (team.reassignable) {
+      setReassignTeam(team);
+      return;
+    }
+    setSelectedTeam(team.id === selectedTeam ? "" : team.id);
   }
 
   if (!week) {
@@ -182,6 +261,7 @@ export default function PickTool({
           <input type="hidden" name="entryId" value={entryId} />
           <input type="hidden" name="scheduleId" value={week.scheduleId} />
           <input type="hidden" name="teamId" value={selectedTeam} />
+          <input type="hidden" name="weekNumber" value={week.weekNumber} />
 
           <div className="mb-3 flex items-center justify-between">
             <span className="font-semibold text-ink">Week {week.weekNumber}</span>
@@ -196,7 +276,7 @@ export default function PickTool({
                   key={team.id}
                   team={team}
                   selected={selectedTeam === team.id}
-                  onClick={() => setSelectedTeam(team.id === selectedTeam ? "" : team.id)}
+                  onClick={() => handleTeamClick(team)}
                 />
               ))}
             </div>
@@ -206,6 +286,16 @@ export default function PickTool({
             <p className="mb-3 text-sm text-muted">
               No eligible teams left for this week (already used, or all games have kicked off).
             </p>
+          )}
+
+          {week.currentPick && (
+            <button
+              type="submit"
+              formAction={clearPick}
+              className="mb-2 text-xs font-medium text-dead hover:underline"
+            >
+              Clear this pick
+            </button>
           )}
 
           {!selectedTeam && (
@@ -248,6 +338,16 @@ export default function PickTool({
               );
             })()}
         </form>
+      )}
+
+      {reassignTeam && (
+        <ReassignModal
+          entryId={entryId}
+          team={reassignTeam}
+          weekNumber={week.weekNumber}
+          scheduleId={week.scheduleId}
+          onCancel={() => setReassignTeam(null)}
+        />
       )}
     </div>
   );
