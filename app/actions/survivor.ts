@@ -222,3 +222,90 @@ export async function savePick(formData: FormData) {
   revalidatePath(`/survivor/${entryId}`);
   redirect(`/survivor/${entryId}?saved=1${weekParam}`);
 }
+
+export async function clearPick(formData: FormData) {
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const weekNumber = Number(formData.get("weekNumber"));
+  const weekParam = weekNumber ? `&week=${weekNumber}` : "";
+
+  const supabase = await createClient();
+
+  // The DELETE is gated by validate_survivor_pick_delete():
+  //   - a kicked-off week raises "This week's pick is already locked and
+  //     cannot be cleared"
+  //   - a bonus-mirrored row raises "This is a bonus week pick and must be
+  //     cleared from the bonus pick screen, not as a regular pick"
+  // Both messages are already human-readable, so they're surfaced as-is the
+  // same way savePick surfaces its trigger errors. The UI only offers this
+  // control for unlocked, non-bonus weeks — the trigger is the real guard.
+  const { error } = await supabase
+    .from("survivor_picks")
+    .delete()
+    .eq("entry_id", entryId)
+    .eq("schedule_id", scheduleId);
+
+  if (error) {
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(error.message)}${weekParam}`);
+  }
+
+  revalidatePath(`/survivor/${entryId}`);
+  redirect(`/survivor/${entryId}?cleared=1${weekParam}`);
+}
+
+export async function reassignSurvivorTeam(formData: FormData) {
+  const entryId = formData.get("entryId") as string;
+  const targetScheduleId = formData.get("targetScheduleId") as string;
+  const teamId = formData.get("teamId") as string;
+  const weekNumber = Number(formData.get("weekNumber"));
+  const weekParam = weekNumber ? `&week=${weekNumber}` : "";
+
+  const supabase = await createClient();
+
+  // FCS eligibility for the TARGET week — the reassign_survivor_team RPC and
+  // the pick triggers check SEC membership + kickoff, not opponent
+  // conference, so this is the real FCS enforcement (same as savePick).
+  const { data: weekGames, error: weekGamesErr } = await supabase
+    .from("games")
+    .select(
+      `home_team_id, away_team_id,
+       home_team:master_teams!games_home_team_id_fkey(id, conference),
+       away_team:master_teams!games_away_team_id_fkey(id, conference)`
+    )
+    .eq("schedule_id", targetScheduleId);
+  if (weekGamesErr) {
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(weekGamesErr.message)}${weekParam}`);
+  }
+  const game = (weekGames ?? []).find((g) => g.home_team_id === teamId || g.away_team_id === teamId);
+  if (!game) {
+    redirect(
+      `/survivor/${entryId}?error=${encodeURIComponent("That team isn't playing this week")}${weekParam}`
+    );
+  }
+  const home = game!.home_team as unknown as { conference: string };
+  const away = game!.away_team as unknown as { conference: string };
+  const opponent = game!.home_team_id === teamId ? away : home;
+  if (opponent.conference === "FCS") {
+    redirect(
+      `/survivor/${entryId}?error=${encodeURIComponent("That team's opponent is FCS this week — ineligible pick")}${weekParam}`
+    );
+  }
+
+  // One transaction: clears the team's existing usage (plain pick, or a whole
+  // bonus week — both teams) and writes the new regular pick for the target
+  // week. Any failure (source week locked, reuse, eligibility) rolls the
+  // whole thing back, so the entry never ends up with neither pick.
+  const { error } = await supabase.rpc("reassign_survivor_team", {
+    p_entry_id: entryId,
+    p_team_id: teamId,
+    p_target_schedule_id: targetScheduleId,
+  });
+
+  if (error) {
+    redirect(`/survivor/${entryId}?error=${encodeURIComponent(error.message)}${weekParam}`);
+  }
+
+  revalidatePath(`/survivor/${entryId}`);
+  revalidatePath(`/survivor/entries/${entryId}/bonus`);
+  redirect(`/survivor/${entryId}?reassigned=1${weekParam}`);
+}
