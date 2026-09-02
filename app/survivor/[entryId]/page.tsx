@@ -149,12 +149,16 @@ export default async function SurvivorEntryPage({
           usedElsewhere !== undefined && !usedElsewhere.locked && !ineligibleFcs && !kickoffPassed;
 
         let disabledReason: string | null = null;
-        if (usedElsewhere !== undefined) {
-          disabledReason = usedElsewhere.locked
-            ? `Used Week ${usedElsewhere.weekNumber} (locked)`
-            : `Used Week ${usedElsewhere.weekNumber} — tap to reassign`;
+        if (reassignable) {
+          disabledReason = `Used Week ${usedElsewhere!.weekNumber} — tap to reassign`;
+        } else if (ineligibleFcs) {
+          disabledReason = null; // the 🔒 FCS badge carries the reason
         } else if (kickoffPassed) {
           disabledReason = "Game already started";
+        } else if (usedElsewhere !== undefined) {
+          disabledReason = usedElsewhere.locked
+            ? `Used Week ${usedElsewhere.weekNumber} (locked)`
+            : `Used Week ${usedElsewhere.weekNumber}`;
         }
 
         teamOptions.push({
