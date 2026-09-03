@@ -208,6 +208,9 @@ async function buildSurvivorSaturdayTargets(
   >();
   const dist = new Map<string, number>();
   let distTotal = 0;
+  const bonusDist = new Map<string, number>();
+  let bonusDistTotal = 0;
+  let bonusPickCount = 0;
 
   for (const raw of (pickRows ?? []) as unknown[]) {
     const p = raw as {
@@ -227,10 +230,19 @@ async function buildSurvivorSaturdayTargets(
       distTotal++;
     };
     bump(p.team);
-    if (p.is_bonus_week && p.bonus_team) bump(p.bonus_team);
+    if (p.is_bonus_week) bonusPickCount++;
+    if (p.is_bonus_week && p.bonus_team) {
+      bump(p.bonus_team);
+      bonusDist.set(
+        teamName(p.bonus_team),
+        (bonusDist.get(teamName(p.bonus_team)) ?? 0) + 1
+      );
+      bonusDistTotal++;
+    }
   }
 
   const aliveCount = entries.length;
+  const totalEntries = entries.length;
   const pickedCount = entries.filter((e) => pickByEntry.has(e.id)).length;
 
   const teamDistribution: TeamDistributionRow[] = [...dist.entries()]
@@ -238,6 +250,14 @@ async function buildSurvivorSaturdayTargets(
       teamName: name,
       count,
       pct: distTotal > 0 ? (count / distTotal) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const bonusTeamDistribution: TeamDistributionRow[] = [...bonusDist.entries()]
+    .map(([name, count]) => ({
+      teamName: name,
+      count,
+      pct: bonusDistTotal > 0 ? (count / bonusDistTotal) * 100 : 0,
     }))
     .sort((a, b) => b.count - a.count);
 
@@ -279,7 +299,10 @@ async function buildSurvivorSaturdayTargets(
       entries: g.entries,
       pickedCount,
       aliveCount,
+      totalEntries,
+      bonusPickCount,
       teamDistribution,
+      bonusTeamDistribution,
       viewPicksUrl: `${SITE_URL}/survivor`,
       unsubscribeUrl: unsubscribeUrl(email),
     }),

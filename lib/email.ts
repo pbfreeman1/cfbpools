@@ -392,27 +392,40 @@ export type SurvivorRecapEntry = { entryName: string; pickLabel: string };
 export type TeamDistributionRow = { teamName: string; count: number; pct: number };
 
 export function survivorSaturdayRecapEmail({
-  firstName,
   weekNumber,
   entries,
   pickedCount,
-  aliveCount,
+  totalEntries,
+  bonusPickCount,
   teamDistribution,
+  bonusTeamDistribution,
   viewPicksUrl,
   unsubscribeUrl,
 }: {
-  firstName: string;
+  // firstName / aliveCount are still accepted from callers but no longer
+  // rendered in the body (the "Good afternoon," opener replaced the salutation).
+  firstName?: string;
   weekNumber: number;
   entries: SurvivorRecapEntry[];
   pickedCount: number;
-  aliveCount: number;
+  aliveCount?: number;
+  totalEntries: number;
+  bonusPickCount: number;
   teamDistribution: TeamDistributionRow[];
+  bonusTeamDistribution: TeamDistributionRow[];
   viewPicksUrl: string;
   unsubscribeUrl: string | null;
 }) {
-  const barRows = teamDistribution
-    .map(
-      (t) => `
+  const pot = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(totalEntries * 30);
+
+  const barChart = (rows: TeamDistributionRow[]) =>
+    rows
+      .map(
+        (t) => `
       <tr>
         <td style="padding: 3px 8px 3px 0; font-size: 12px; white-space: nowrap; vertical-align: middle; color: #1a1a1a;">${t.teamName}</td>
         <td style="width: 100%; vertical-align: middle; padding: 3px 0;">
@@ -425,8 +438,8 @@ export function survivorSaturdayRecapEmail({
         </td>
         <td style="padding: 3px 0 3px 8px; font-size: 12px; vertical-align: middle; color: #8B93A7;">${t.count}</td>
       </tr>`
-    )
-    .join("");
+      )
+      .join("");
 
   const entriesHtml = entries
     .map(
@@ -437,8 +450,37 @@ export function survivorSaturdayRecapEmail({
 
   return wrapper(`
     <h1 style="font-size: 20px; margin: 0 0 12px;">SEC Survivor — Week ${weekNumber}</h1>
-    <p>Hi ${firstName},</p>
-    <p><strong>${pickedCount}</strong> of <strong>${aliveCount}</strong> alive entries have made their Week ${weekNumber} pick.</p>
+    <p>Good afternoon,</p>
+    <p>The 2026 College Football season is officially underway! We ended up with
+    <strong>${totalEntries}</strong> entries in this year&apos;s pool, which brings our
+    tentative total pot to <strong>${pot}</strong>. This number could change after I finish
+    verifying everyone&apos;s payments and clean up any duplicate entries. I hope to have
+    everything confirmed and cleaned up in the next week. So, be on the lookout early next
+    week for a final entry count and total of this year&apos;s pot. If you have not paid your
+    entry fee, then please do so ASAP to prevent being dropped from the pool!</p>
+    <p>The Week ${weekNumber} SEC Survivor Pool picks have been posted. We had
+    <strong>${bonusPickCount}</strong> Bonus Picks this week. Please let me know if anything
+    looks off or if you have any questions. The pick counts for this week are posted below
+    along with the link to view the picks. Picks will not be visible on the site until the
+    game has kicked off.</p>
+    <p>Good Luck!</p>
+    <p><a href="${viewPicksUrl}" style="color: #D99A26;">Link to View Picks &rarr;</a></p>
+    ${
+      teamDistribution.length > 0
+        ? `<p style="margin-bottom: 4px; font-size: 13px; color: #8B93A7;">Week ${weekNumber} Pick Counts — ${pickedCount}</p>
+           <table style="width: 100%; border-collapse: collapse; margin: 4px 0 16px;">${barChart(
+             teamDistribution
+           )}</table>`
+        : ""
+    }
+    ${
+      bonusPickCount > 0
+        ? `<p style="margin-bottom: 4px; font-size: 13px; color: #8B93A7;">Week ${weekNumber} Bonus Picks Count — ${bonusPickCount}</p>
+           <table style="width: 100%; border-collapse: collapse; margin: 4px 0 16px;">${barChart(
+             bonusTeamDistribution
+           )}</table>`
+        : ""
+    }
     ${
       entries.length > 0
         ? `<p style="margin-bottom: 4px;">Your alive ${
@@ -447,13 +489,6 @@ export function survivorSaturdayRecapEmail({
            <ul style="padding-left: 20px; line-height: 1.6; margin-top: 0;">${entriesHtml}</ul>`
         : ""
     }
-    ${
-      teamDistribution.length > 0
-        ? `<p style="margin-bottom: 4px; font-size: 13px; color: #8B93A7;">Week ${weekNumber} pick distribution (live, all games):</p>
-           <table style="width: 100%; border-collapse: collapse; margin: 4px 0 16px;">${barRows}</table>`
-        : ""
-    }
-    <p><a href="${viewPicksUrl}" style="color: #D99A26;">View the Survivor pool &rarr;</a></p>
     ${bulkFooter(unsubscribeUrl)}
   `);
 }
@@ -467,16 +502,16 @@ export type PickemRecapPick = {
 export type PickemRecapEntry = { entryName: string; picks: PickemRecapPick[] };
 
 export function pickemSaturdayRecapEmail({
-  firstName,
   weekNumber,
-  entries,
   ecount,
   leaderboardUrl,
   unsubscribeUrl,
 }: {
-  firstName: string;
+  // firstName / entries are still accepted from callers but no longer rendered
+  // (the per-entry pick list was removed; "Good afternoon," replaced the salutation).
+  firstName?: string;
   weekNumber: number;
-  entries: PickemRecapEntry[];
+  entries?: PickemRecapEntry[];
   ecount: number;
   leaderboardUrl: string;
   unsubscribeUrl: string | null;
@@ -487,33 +522,20 @@ export function pickemSaturdayRecapEmail({
     maximumFractionDigits: 0,
   }).format(ecount * 10);
 
-  const entriesHtml = entries
-    .map((e) => {
-      const picksHtml =
-        e.picks.length > 0
-          ? e.picks
-              .map(
-                (p) =>
-                  `<li>${p.gameLabel}: <strong>${p.teamName} ${p.spreadLabel}</strong>${
-                    p.locked ? " (locked)" : " (open)"
-                  }</li>`
-              )
-              .join("")
-          : `<li style="color: #8B93A7;">No picks made yet</li>`;
-      return `
-        <p style="margin: 12px 0 4px;"><strong>${e.entryName}</strong></p>
-        <ul style="padding-left: 20px; line-height: 1.6; margin-top: 0;">${picksHtml}</ul>`;
-    })
-    .join("");
-
   return wrapper(`
     <h1 style="font-size: 20px; margin: 0 0 12px;">Week ${weekNumber} College Football Pick&apos;em Pool</h1>
-    <p>Hi ${firstName},</p>
-    <p>As of right now we have <strong>${ecount}</strong> ${
+    <p>Good afternoon,</p>
+    <p>We had <strong>${ecount}</strong> ${
       ecount === 1 ? "entry" : "entries"
-    }, which puts our tentative pot at <strong>${pot}</strong>. The pot is tentative until entry fees are collected, and payouts complete by Wednesday of the following week.</p>
-    ${entriesHtml || "<p>You have no entries for this week.</p>"}
-    <p><a href="${leaderboardUrl}" style="color: #4C7EFF;">View the leaderboard &rarr;</a></p>
+    } this week as of 12 PM, which brings our pot to a tentative total of <strong>${pot}</strong>
+    depending on whether I collect entry fees from everyone. If you have not paid your entry
+    fees, then please do so ASAP. Payouts will be sent no later than next Wednesday after all
+    entries and picks have been confirmed. Reminder that as long as there are 6 games that have
+    not kicked off, you can still enter this week&apos;s pool.</p>
+    <p>The link to the leaderboard is below and should update every 30 minutes or so. Please
+    let me know if you have any questions or notice anything off.</p>
+    <p>Good Luck!</p>
+    <p><a href="${leaderboardUrl}" style="color: #4C7EFF;">Link to Leaderboard &rarr;</a></p>
     <div style="font-size: 12px; color: #8B93A7; margin-top: 20px;">
       <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">A few notes</p>
       <p style="margin: 0 0 8px;">Scores, leaderboard standings, and pick results are shown for convenience and aren&apos;t official until reviewed and confirmed by the pool administrator. In the rare case of a scoring error or site issue, the administrator may correct results before anything is finalized.</p>
