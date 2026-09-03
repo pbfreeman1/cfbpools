@@ -1,3 +1,6 @@
+import { createHmac, timingSafeEqual } from "crypto";
+import { createServiceClient } from "@/lib/supabase/service";
+
 // Three sending streams, one Resend-verified subdomain each — keeps
 // engagement/complaint metrics for transactional mail (picks, welcome)
 // separate from bulk mail (weekly recaps), and keeps admin notifications on
@@ -10,16 +13,112 @@ const STREAM_ENV_VAR: Record<EmailStream, string> = {
   updates: "RESEND_FROM_UPDATES",
 };
 
-type EmailInput = { to: string; subject: string; html: string; stream: EmailStream };
-type DeliverResult = { ok: boolean; error?: string };
+// "none" — only respects a scope='all' opt-out (all transactional sends).
+// "bulk" — additionally respects a scope='bulk' opt-out (the weekly pool
+// recap / reminder campaigns).
+export type UnsubscribeCheck = "none" | "bulk";
 
-async function deliverEmail({ to, subject, html, stream }: EmailInput): Promise<DeliverResult> {
+type EmailInput = {
+  to: string;
+  subject: string;
+  html: string;
+  stream: EmailStream;
+  unsubscribeCheck?: UnsubscribeCheck;
+  headers?: Record<string, string>;
+};
+export type DeliverResult = {
+  ok: boolean;
+  error?: string;
+  /** Set when the send was intentionally not attempted (recipient opted out). */
+  skipped?: boolean;
+  skipReason?: "unsubscribed_all" | "unsubscribed_bulk";
+  messageId?: string;
+};
+
+// -- Unsubscribe token helpers ------------------------------------------------
+
+/**
+ * HMAC-SHA256 of the (lowercased) recipient email, keyed by EMAIL_UNSUB_SECRET.
+ * This token — not RLS — is the access control on the unsubscribe page and
+ * on the email_unsubscribes table. Returns null if the secret is unset.
+ */
+export function signToken(email: string): string | null {
+  const secret = process.env.EMAIL_UNSUB_SECRET;
+  if (!secret) return null;
+  return createHmac("sha256", secret).update(email.trim().toLowerCase()).digest("hex");
+}
+
+export function verifyToken(email: string, token: string): boolean {
+  const expected = signToken(email);
+  if (!expected || !token) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(token);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Full unsubscribe URL for an email, or null if unbuildable (missing secret/site URL). */
+export function unsubscribeUrl(email: string): string | null {
+  const token = signToken(email);
+  const base = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!token || !base) return null;
+  return `${base.replace(/\/$/, "")}/unsubscribe?email=${encodeURIComponent(
+    email.trim().toLowerCase()
+  )}&token=${token}`;
+}
+
+/**
+ * Checks the email_unsubscribes table (via the service-role client, since it
+ * has no public read policy). Returns the reason the send should be skipped,
+ * or null to proceed. Fails open — an infra error here must never silently
+ * drop transactional mail.
+ */
+async function suppressionReason(
+  email: string,
+  mode: UnsubscribeCheck
+): Promise<DeliverResult["skipReason"] | null> {
+  try {
+    const svc = createServiceClient();
+    const { data } = await svc
+      .from("email_unsubscribes")
+      .select("scope")
+      .eq("email", email.trim().toLowerCase())
+      .maybeSingle();
+    if (!data) return null;
+    if (data.scope === "all") return "unsubscribed_all";
+    if (data.scope === "bulk" && mode === "bulk") return "unsubscribed_bulk";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function deliverEmail(input: EmailInput): Promise<DeliverResult> {
+  const { to, subject, html, stream } = input;
+  const unsubscribeCheck: UnsubscribeCheck = input.unsubscribeCheck ?? "none";
   const apiKey = process.env.RESEND_API_KEY;
   const envVar = STREAM_ENV_VAR[stream];
   const from = process.env[envVar];
 
   if (!apiKey || !from) {
     return { ok: false, error: `RESEND_API_KEY or ${envVar} not set` };
+  }
+
+  // 'all'-scope opt-outs are honored unconditionally here so a template that
+  // forgets to pass unsubscribeCheck can never bypass a full opt-out.
+  const skipReason = await suppressionReason(to, unsubscribeCheck);
+  if (skipReason) {
+    return { ok: false, skipped: true, skipReason };
+  }
+
+  // Every bulk ("updates") send carries List-Unsubscribe headers so Gmail /
+  // Apple Mail render a native one-click unsubscribe control.
+  const headers: Record<string, string> = { ...(input.headers ?? {}) };
+  if (stream === "updates") {
+    const url = unsubscribeUrl(to);
+    if (url) {
+      headers["List-Unsubscribe"] = `<${url}>, <mailto:pbfreeman7314@gmail.com?subject=unsubscribe>`;
+      headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+    }
   }
 
   try {
@@ -29,13 +128,20 @@ async function deliverEmail({ to, subject, html, stream }: EmailInput): Promise<
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        html,
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      }),
     });
 
     if (!res.ok) {
       return { ok: false, error: `${res.status} ${await res.text()}` };
     }
-    return { ok: true };
+    const json = (await res.json().catch(() => null)) as { id?: string } | null;
+    return { ok: true, messageId: json?.id };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -48,7 +154,7 @@ async function deliverEmail({ to, subject, html, stream }: EmailInput): Promise<
  */
 export async function sendEmail(input: EmailInput): Promise<void> {
   const result = await deliverEmail(input);
-  if (!result.ok) {
+  if (!result.ok && !result.skipped) {
     console.warn(`[email] Failed to send "${input.subject}" to ${input.to}: ${result.error}`);
   }
 }
@@ -266,5 +372,211 @@ export function adminNewEntryEmail({
       ${detailRow("Pool", "SEC Survivor")}
       ${detailRow("Created", createdAt)}
     </table>
+  `);
+}
+
+// -- Bulk ("updates" stream) pool campaign templates -------------------------
+
+/** Plain-text-style unsubscribe footer for every bulk send. */
+function bulkFooter(unsubUrl: string | null): string {
+  if (!unsubUrl) return "";
+  return `
+    <p style="font-size: 12px; color: #8B93A7; margin: 24px 0 0; border-top: 1px solid #e5e7eb; padding-top: 12px;">
+      Don&apos;t want these emails?
+      <a href="${unsubUrl}" style="color: #8B93A7;">Unsubscribe</a>.
+    </p>
+  `;
+}
+
+export type SurvivorRecapEntry = { entryName: string; pickLabel: string };
+export type TeamDistributionRow = {
+  teamName: string;
+  count: number;
+  pct: number;
+  logoUrl: string | null;
+  primaryColor: string | null;
+};
+
+export function survivorSaturdayRecapEmail({
+  weekNumber,
+  entries,
+  pickedCount,
+  totalEntries,
+  bonusPickCount,
+  teamDistribution,
+  bonusTeamDistribution,
+  viewPicksUrl,
+  unsubscribeUrl,
+}: {
+  // firstName / aliveCount are still accepted from callers but no longer
+  // rendered in the body (the "Good afternoon," opener replaced the salutation).
+  firstName?: string;
+  weekNumber: number;
+  entries: SurvivorRecapEntry[];
+  pickedCount: number;
+  aliveCount?: number;
+  totalEntries: number;
+  bonusPickCount: number;
+  teamDistribution: TeamDistributionRow[];
+  bonusTeamDistribution: TeamDistributionRow[];
+  viewPicksUrl: string;
+  unsubscribeUrl: string | null;
+}) {
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+  const grossPot = totalEntries * 30;
+  const pot = formatter.format(grossPot * (1 - 0.075)); // 92.5% of gross
+
+  const barChart = (rows: TeamDistributionRow[]) =>
+    rows
+      .map(
+        (t) => `
+      <tr>
+        <td style="padding: 3px 8px 3px 0; white-space: nowrap; vertical-align: middle;">
+          ${
+            t.logoUrl
+              ? `<img src="${t.logoUrl}" width="18" height="18" style="vertical-align: middle; margin-right: 4px; display: inline-block;" alt="${t.teamName}" />`
+              : ""
+          }
+          <span style="font-size: 12px; color: #1a1a1a; vertical-align: middle;">${t.teamName}</span>
+        </td>
+        <td style="width: 100%; vertical-align: middle; padding: 3px 0;">
+          <div style="background: #ECEEF2; width: 100%; height: 14px;">
+            <div style="background: ${t.primaryColor ?? "#D99A26"}; width: ${Math.max(
+              2,
+              Math.round(t.pct)
+            )}%; height: 14px;"></div>
+          </div>
+        </td>
+        <td style="padding: 3px 0 3px 8px; font-size: 12px; vertical-align: middle; color: #8B93A7;">${t.count}</td>
+      </tr>`
+      )
+      .join("");
+
+  const entriesHtml = entries
+    .map(
+      (e) =>
+        `<li><strong>${e.entryName}</strong> — ${e.pickLabel}</li>`
+    )
+    .join("");
+
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">SEC Survivor — Week ${weekNumber}</h1>
+    <p>Good afternoon,</p>
+    <p>The 2026 College Football season is officially underway! We ended up with
+    <strong>${totalEntries}</strong> entries in this year&apos;s pool, which brings our
+    tentative total pot to <strong>${pot}</strong> after the 7.5% admin fee. This number could change after I finish
+    verifying everyone&apos;s payments and clean up any duplicate entries. I hope to have
+    everything confirmed and cleaned up in the next week. So, be on the lookout early next
+    week for a final entry count and total of this year&apos;s pot. If you have not paid your
+    entry fee, then please do so ASAP to prevent being dropped from the pool!</p>
+    <p>The Week ${weekNumber} SEC Survivor Pool picks have been posted. We had
+    <strong>${bonusPickCount}</strong> Bonus Picks this week. Please let me know if anything
+    looks off or if you have any questions. The pick counts for this week are posted below
+    along with the link to view the picks. Picks will not be visible on the site until the
+    game has kicked off.</p>
+    <p>Good Luck!</p>
+    <p><a href="${viewPicksUrl}" style="color: #D99A26;">Link to View Picks &rarr;</a></p>
+    ${
+      teamDistribution.length > 0
+        ? `<p style="margin-bottom: 4px; font-size: 13px; color: #8B93A7;">Week ${weekNumber} Pick Counts — ${pickedCount}</p>
+           <table style="width: 100%; border-collapse: collapse; margin: 4px 0 16px;">${barChart(
+             teamDistribution
+           )}</table>`
+        : ""
+    }
+    ${
+      bonusPickCount > 0
+        ? `<p style="margin-bottom: 4px; font-size: 13px; color: #8B93A7;">Week ${weekNumber} Bonus Picks Count — ${bonusPickCount}</p>
+           <table style="width: 100%; border-collapse: collapse; margin: 4px 0 16px;">${barChart(
+             bonusTeamDistribution
+           )}</table>`
+        : ""
+    }
+    ${
+      entries.length > 0
+        ? `<p style="margin-bottom: 4px;">Your alive ${
+            entries.length === 1 ? "entry" : "entries"
+          }:</p>
+           <ul style="padding-left: 20px; line-height: 1.6; margin-top: 0;">${entriesHtml}</ul>`
+        : ""
+    }
+    ${bulkFooter(unsubscribeUrl)}
+  `);
+}
+
+export type PickemRecapPick = {
+  gameLabel: string;
+  teamName: string;
+  spreadLabel: string;
+  locked: boolean;
+};
+export type PickemRecapEntry = { entryName: string; picks: PickemRecapPick[] };
+
+export function pickemSaturdayRecapEmail({
+  weekNumber,
+  ecount,
+  leaderboardUrl,
+  unsubscribeUrl,
+}: {
+  // firstName / entries are still accepted from callers but no longer rendered
+  // (the per-entry pick list was removed; "Good afternoon," replaced the salutation).
+  firstName?: string;
+  weekNumber: number;
+  entries?: PickemRecapEntry[];
+  ecount: number;
+  leaderboardUrl: string;
+  unsubscribeUrl: string | null;
+}) {
+  const pot = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(ecount * 10);
+
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">Week ${weekNumber} College Football Pick&apos;em Pool</h1>
+    <p>Good afternoon,</p>
+    <p>We had <strong>${ecount}</strong> ${
+      ecount === 1 ? "entry" : "entries"
+    } this week as of 12 PM, which brings our pot to a tentative total of <strong>${pot}</strong>
+    depending on whether I collect entry fees from everyone. If you have not paid your entry
+    fees, then please do so ASAP. Payouts will be sent no later than next Wednesday after all
+    entries and picks have been confirmed. Reminder that as long as there are 6 games that have
+    not kicked off, you can still enter this week&apos;s pool.</p>
+    <p>The link to the leaderboard is below and should update every 30 minutes or so. Please
+    let me know if you have any questions or notice anything off.</p>
+    <p>Good Luck!</p>
+    <p><a href="${leaderboardUrl}" style="color: #4C7EFF;">Link to Leaderboard &rarr;</a></p>
+    <div style="font-size: 12px; color: #8B93A7; margin-top: 20px;">
+      <p style="margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">A few notes</p>
+      <p style="margin: 0 0 8px;">Scores, leaderboard standings, and pick results are shown for convenience and aren&apos;t official until reviewed and confirmed by the pool administrator. In the rare case of a scoring error or site issue, the administrator may correct results before anything is finalized.</p>
+      <p style="margin: 0;">All entries, picks, and account activity are logged in detail to keep things fair for everyone. Anyone found exploiting a bug or unintended site behavior to gain an advantage will have all their entries removed from every pool, forfeit any winnings, and be banned from future pools.</p>
+    </div>
+    ${bulkFooter(unsubscribeUrl)}
+  `);
+}
+
+export function survivorFridayReminderEmail({
+  firstName,
+  weekNumber,
+  entryName,
+  unsubscribeUrl,
+}: {
+  firstName: string;
+  weekNumber: number;
+  entryName: string;
+  unsubscribeUrl: string | null;
+}) {
+  return wrapper(`
+    <h1 style="font-size: 20px; margin: 0 0 12px;">Missing Week ${weekNumber} pick</h1>
+    <p>Hi ${firstName},</p>
+    <p>If you are receiving this email, then you have not submitted your Week ${weekNumber} pick for <strong>${entryName}</strong>. Please be sure to make your pick before the games start tomorrow.</p>
+    <p>If you believe you&apos;re receiving this in error, email pbfreeman7314@gmail.com and include your pick.</p>
+    <p><a href="https://cfbpools.com/survivor" style="color: #D99A26;">Make your pick &rarr;</a></p>
+    ${bulkFooter(unsubscribeUrl)}
   `);
 }
