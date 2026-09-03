@@ -163,7 +163,13 @@ async function runSendBatch(
 
 // -- Recipient / content builders -----------------------------------------
 
-type TeamRef = { id: string; school_name: string; short_name: string | null };
+type TeamRef = {
+  id: string;
+  school_name: string;
+  short_name: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+};
 const teamName = (t: TeamRef | null | undefined) =>
   t ? t.short_name || t.school_name : "—";
 
@@ -192,8 +198,8 @@ async function buildSurvivorSaturdayTargets(
         .from("survivor_picks")
         .select(
           `entry_id, is_bonus_week,
-           team:master_teams!survivor_picks_team_id_fkey(id, school_name, short_name),
-           bonus_team:master_teams!survivor_picks_bonus_team_id_fkey(id, school_name, short_name)`
+           team:master_teams!survivor_picks_team_id_fkey(id, school_name, short_name, logo_url, primary_color),
+           bonus_team:master_teams!survivor_picks_bonus_team_id_fkey(id, school_name, short_name, logo_url, primary_color)`
         )
         .eq("schedule_id", scheduleId)
         .in(
@@ -206,11 +212,28 @@ async function buildSurvivorSaturdayTargets(
     string,
     { team: TeamRef; bonusTeam: TeamRef | null; isBonus: boolean }
   >();
-  const dist = new Map<string, number>();
+  type DistAgg = {
+    count: number;
+    logoUrl: string | null;
+    primaryColor: string | null;
+  };
+  const dist = new Map<string, DistAgg>();
   let distTotal = 0;
-  const bonusDist = new Map<string, number>();
+  const bonusDist = new Map<string, DistAgg>();
   let bonusDistTotal = 0;
   let bonusPickCount = 0;
+
+  // Accumulate one team into a dist map, carrying the first non-null logo /
+  // primary color seen (identical across all picks of the same team).
+  const addTo = (map: Map<string, DistAgg>, t: TeamRef) => {
+    const name = teamName(t);
+    const cur = map.get(name);
+    map.set(name, {
+      count: (cur?.count ?? 0) + 1,
+      logoUrl: cur?.logoUrl ?? t.logo_url ?? null,
+      primaryColor: cur?.primaryColor ?? t.primary_color ?? null,
+    });
+  };
 
   for (const raw of (pickRows ?? []) as unknown[]) {
     const p = raw as {
@@ -225,18 +248,13 @@ async function buildSurvivorSaturdayTargets(
       bonusTeam: p.bonus_team,
       isBonus: p.is_bonus_week,
     });
-    const bump = (t: TeamRef) => {
-      dist.set(teamName(t), (dist.get(teamName(t)) ?? 0) + 1);
-      distTotal++;
-    };
-    bump(p.team);
+    addTo(dist, p.team);
+    distTotal++;
     if (p.is_bonus_week) bonusPickCount++;
     if (p.is_bonus_week && p.bonus_team) {
-      bump(p.bonus_team);
-      bonusDist.set(
-        teamName(p.bonus_team),
-        (bonusDist.get(teamName(p.bonus_team)) ?? 0) + 1
-      );
+      addTo(dist, p.bonus_team);
+      distTotal++;
+      addTo(bonusDist, p.bonus_team);
       bonusDistTotal++;
     }
   }
@@ -245,21 +263,19 @@ async function buildSurvivorSaturdayTargets(
   const totalEntries = entries.length;
   const pickedCount = entries.filter((e) => pickByEntry.has(e.id)).length;
 
-  const teamDistribution: TeamDistributionRow[] = [...dist.entries()]
-    .map(([name, count]) => ({
-      teamName: name,
-      count,
-      pct: distTotal > 0 ? (count / distTotal) * 100 : 0,
-    }))
-    .sort((a, b) => b.count - a.count);
+  const toRows = (map: Map<string, DistAgg>, total: number): TeamDistributionRow[] =>
+    [...map.entries()]
+      .map(([name, agg]) => ({
+        teamName: name,
+        count: agg.count,
+        pct: total > 0 ? (agg.count / total) * 100 : 0,
+        logoUrl: agg.logoUrl,
+        primaryColor: agg.primaryColor,
+      }))
+      .sort((a, b) => b.count - a.count);
 
-  const bonusTeamDistribution: TeamDistributionRow[] = [...bonusDist.entries()]
-    .map(([name, count]) => ({
-      teamName: name,
-      count,
-      pct: bonusDistTotal > 0 ? (count / bonusDistTotal) * 100 : 0,
-    }))
-    .sort((a, b) => b.count - a.count);
+  const teamDistribution = toRows(dist, distTotal);
+  const bonusTeamDistribution = toRows(bonusDist, bonusDistTotal);
 
   // Consolidate by email.
   const groups = new Map<

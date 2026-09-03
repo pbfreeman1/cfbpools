@@ -389,7 +389,13 @@ function bulkFooter(unsubUrl: string | null): string {
 }
 
 export type SurvivorRecapEntry = { entryName: string; pickLabel: string };
-export type TeamDistributionRow = { teamName: string; count: number; pct: number };
+export type TeamDistributionRow = {
+  teamName: string;
+  count: number;
+  pct: number;
+  logoUrl: string | null;
+  primaryColor: string | null;
+};
 
 export function survivorSaturdayRecapEmail({
   weekNumber,
@@ -416,21 +422,30 @@ export function survivorSaturdayRecapEmail({
   viewPicksUrl: string;
   unsubscribeUrl: string | null;
 }) {
-  const pot = new Intl.NumberFormat("en-US", {
+  const formatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
-  }).format(totalEntries * 30);
+  });
+  const grossPot = totalEntries * 30;
+  const pot = formatter.format(grossPot * (1 - 0.075)); // 92.5% of gross
 
   const barChart = (rows: TeamDistributionRow[]) =>
     rows
       .map(
         (t) => `
       <tr>
-        <td style="padding: 3px 8px 3px 0; font-size: 12px; white-space: nowrap; vertical-align: middle; color: #1a1a1a;">${t.teamName}</td>
+        <td style="padding: 3px 8px 3px 0; white-space: nowrap; vertical-align: middle;">
+          ${
+            t.logoUrl
+              ? `<img src="${t.logoUrl}" width="18" height="18" style="vertical-align: middle; margin-right: 4px; display: inline-block;" alt="${t.teamName}" />`
+              : ""
+          }
+          <span style="font-size: 12px; color: #1a1a1a; vertical-align: middle;">${t.teamName}</span>
+        </td>
         <td style="width: 100%; vertical-align: middle; padding: 3px 0;">
           <div style="background: #ECEEF2; width: 100%; height: 14px;">
-            <div style="background: #D99A26; width: ${Math.max(
+            <div style="background: ${t.primaryColor ?? "#D99A26"}; width: ${Math.max(
               2,
               Math.round(t.pct)
             )}%; height: 14px;"></div>
@@ -453,7 +468,7 @@ export function survivorSaturdayRecapEmail({
     <p>Good afternoon,</p>
     <p>The 2026 College Football season is officially underway! We ended up with
     <strong>${totalEntries}</strong> entries in this year&apos;s pool, which brings our
-    tentative total pot to <strong>${pot}</strong>. This number could change after I finish
+    tentative total pot to <strong>${pot}</strong> after the 7.5% admin fee. This number could change after I finish
     verifying everyone&apos;s payments and clean up any duplicate entries. I hope to have
     everything confirmed and cleaned up in the next week. So, be on the lookout early next
     week for a final entry count and total of this year&apos;s pot. If you have not paid your
