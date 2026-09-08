@@ -201,6 +201,26 @@ export async function getPickemLeaderboard(scheduleId: string): Promise<Leaderbo
   }));
 }
 
+// entryId -> entrant's real name (first + last, from profiles), for the
+// leaderboard's expanded pick view. Backed by the SECURITY DEFINER
+// get_pickem_entrant_names() RPC because profiles is own-or-admin readable —
+// a plain join can't reach other entrants' names. Entries whose owner has
+// no name on file are simply omitted from the map. Returns {} on failure.
+export async function getPickemEntrantNames(
+  scheduleId: string
+): Promise<Record<string, string>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_pickem_entrant_names", {
+    p_schedule_id: scheduleId,
+  });
+  if (error || !data) return {};
+  const map: Record<string, string> = {};
+  (data as { entry_id: string; entrant_name: string | null }[]).forEach((r) => {
+    if (r.entrant_name) map[r.entry_id] = r.entrant_name;
+  });
+  return map;
+}
+
 export type PickemPickResult = "win" | "loss" | "push";
 
 export type PickemEntryPickDetail = {

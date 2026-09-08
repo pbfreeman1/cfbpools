@@ -17,16 +17,77 @@ import GamesPanel, { type PickemGameStatus } from "./GamesPanel";
 // function runs, so anything in the 30-60s range is fine.
 const POLL_MS = 45000;
 
+function LeaderboardRowCard({
+  row,
+  isExpanded,
+  onToggle,
+  entrantName,
+}: {
+  row: LeaderboardRow;
+  isExpanded: boolean;
+  onToggle: () => void;
+  entrantName?: string | null;
+}) {
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        row.isOwn ? "border-pickem-500 bg-pickem-500/5" : "border-edge bg-surface"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isExpanded}
+        className="flex w-full items-center gap-3 text-left"
+      >
+        {/* Spacer only — keeps the name/badge indent stable now that the
+            rank number is no longer shown. */}
+        <span className="w-8 flex-shrink-0" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{row.entryName}</p>
+          {entrantName && (
+            <p className="truncate text-[11px] text-muted">{entrantName}</p>
+          )}
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            {row.isOwn && (
+              <span className="inline-block rounded bg-pickem-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-pickem-400">
+                You
+              </span>
+            )}
+            <EliminatedBadge effectiveLosses={row.effectiveLosses} />
+          </div>
+        </div>
+        <EntryRecordBadges
+          wins={row.wins}
+          effectiveLosses={row.effectiveLosses}
+          liveWins={row.liveWins}
+          liveLosses={row.liveLosses}
+        />
+        <span className="flex-shrink-0 text-xs text-muted">{isExpanded ? "▲" : "▼"}</span>
+      </button>
+
+      <ExpandablePicks
+        entryId={row.entryId}
+        open={isExpanded}
+        isOwn={row.isOwn}
+        entrantName={entrantName}
+      />
+    </div>
+  );
+}
+
 export default function LeaderboardTable({
   scheduleId,
   initialRows,
   initialLastSync,
   games,
+  entrantNames = {},
 }: {
   scheduleId: string;
   initialRows: LeaderboardRow[];
   initialLastSync: string | null;
   games: PickemGameStatus[];
+  entrantNames?: Record<string, string>;
 }) {
   const [rows, setRows] = useState(initialRows);
   const [lastSync, setLastSync] = useState<string | null>(initialLastSync);
@@ -66,9 +127,35 @@ export default function LeaderboardTable({
     return () => clearInterval(interval);
   }, [scheduleId]);
 
+  const toggle = (id: string) => setExpandedId((cur) => (cur === id ? null : id));
+
+  // The caller's own entries — get_pickem_leaderboard always includes every
+  // one of them regardless of the eCount window, so this is complete even
+  // when they'd otherwise fall outside the visible field.
+  const ownRows = rows.filter((r) => r.isOwn);
+
   return (
     <div>
       <GamesPanel games={games} />
+
+      {ownRows.length > 0 && (
+        <div className="mb-5 rounded-lg border border-pickem-500/40 bg-pickem-500/5 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-pickem-400">
+            Your {ownRows.length === 1 ? "entry" : "entries"}
+          </p>
+          <div className="flex flex-col gap-2">
+            {ownRows.map((row) => (
+              <LeaderboardRowCard
+                key={`pinned-${row.entryId}`}
+                row={row}
+                isExpanded={expandedId === row.entryId}
+                onToggle={() => toggle(row.entryId)}
+                entrantName={entrantNames[row.entryId]}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-semibold uppercase tracking-wide text-muted">
@@ -86,50 +173,15 @@ export default function LeaderboardTable({
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {rows.map((row) => {
-            const isExpanded = expandedId === row.entryId;
-            return (
-              <div
-                key={row.entryId}
-                className={`rounded-lg border px-3 py-2.5 ${
-                  row.isOwn ? "border-pickem-500 bg-pickem-500/5" : "border-edge bg-surface"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setExpandedId(isExpanded ? null : row.entryId)}
-                  aria-expanded={isExpanded}
-                  className="flex w-full items-center gap-3 text-left"
-                >
-                  {/* Spacer only — keeps the name/badge indent stable now that
-                      the rank number is no longer shown. */}
-                  <span className="w-8 flex-shrink-0" aria-hidden="true" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">{row.entryName}</p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                      {row.isOwn && (
-                        <span className="inline-block rounded bg-pickem-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-pickem-400">
-                          You
-                        </span>
-                      )}
-                      <EliminatedBadge effectiveLosses={row.effectiveLosses} />
-                    </div>
-                  </div>
-                  <EntryRecordBadges
-                    wins={row.wins}
-                    effectiveLosses={row.effectiveLosses}
-                    liveWins={row.liveWins}
-                    liveLosses={row.liveLosses}
-                  />
-                  <span className="flex-shrink-0 text-xs text-muted">
-                    {isExpanded ? "▲" : "▼"}
-                  </span>
-                </button>
-
-                <ExpandablePicks entryId={row.entryId} open={isExpanded} isOwn={row.isOwn} />
-              </div>
-            );
-          })}
+          {rows.map((row) => (
+            <LeaderboardRowCard
+              key={row.entryId}
+              row={row}
+              isExpanded={expandedId === row.entryId}
+              onToggle={() => toggle(row.entryId)}
+              entrantName={entrantNames[row.entryId]}
+            />
+          ))}
         </div>
       )}
     </div>

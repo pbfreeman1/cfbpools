@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getPickemLeaderboard, getLastPickemSyncTime } from "@/app/actions/pickem";
+import {
+  getPickemLeaderboard,
+  getLastPickemSyncTime,
+  getPickemEntrantNames,
+} from "@/app/actions/pickem";
 import LeaderboardTable from "./LeaderboardTable";
 import type { PickemGameStatus } from "./GamesPanel";
 
@@ -41,10 +45,11 @@ export default async function PickemLeaderboardPage({
     );
   }
 
-  const [{ data: week }, rows, lastSync, { data: gamesData }] = await Promise.all([
+  const [{ data: week }, rows, lastSync, entrantNames, { data: gamesData }] = await Promise.all([
     supabase.from("schedule").select("week_number, label").eq("id", scheduleId).single(),
     getPickemLeaderboard(scheduleId),
     getLastPickemSyncTime(),
+    getPickemEntrantNames(scheduleId),
     supabase
       .from("games")
       .select(
@@ -99,6 +104,7 @@ export default async function PickemLeaderboardPage({
         initialRows={initialRows}
         initialLastSync={lastSync}
         games={games}
+        entrantNames={entrantNames}
       />
     </main>
   );

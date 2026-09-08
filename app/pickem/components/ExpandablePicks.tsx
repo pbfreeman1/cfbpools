@@ -51,10 +51,14 @@ export function ExpandablePicks({
   entryId,
   open,
   isOwn = false,
+  entrantName,
 }: {
   entryId: string;
   open: boolean;
   isOwn?: boolean;
+  // The entrant's real name (first + last). Shown as a header line above the
+  // pick list so a leaderboard row reads as a person, not just an entry name.
+  entrantName?: string | null;
 }) {
   const [picks, setPicks] = useState<PickemEntryPickDetail[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,6 +98,12 @@ export function ExpandablePicks({
 
   return (
     <div className="mt-2 border-t border-edge pt-2">
+      {entrantName && (
+        <p className="px-1 pb-1.5 text-xs text-muted">
+          Entrant: <span className="font-medium text-ink">{entrantName}</span>
+        </p>
+      )}
+
       {loading && <p className="px-1 py-2 text-xs text-muted">Loading picks…</p>}
 
       {!loading && failed && (
