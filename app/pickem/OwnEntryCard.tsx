@@ -16,33 +16,58 @@ export type OwnEntryRecord = {
 
 // One row in the homepage "Your entries" list. The card is no longer a
 // single big <Link> (a nested expand button would be invalid inside an
-// anchor) — the entry name links to the edit page, and a separate toggle
-// reveals the same ExpandablePicks / record components the leaderboard uses.
+// anchor) — instead, when the entry is still editable, a stretched-link
+// overlay (absolute inset-0, z-0) makes the whole card tap to the edit
+// page, while the interactive footer (Show/Hide picks, Retry inside
+// ExpandablePicks) sits above it at z-10. `editable` is false once every
+// game in the week's pool has kicked off — then there's no overlay and the
+// footer says "Picks locked" instead of implying an edit is possible.
 export default function OwnEntryCard({
   entryId,
   entryName,
   createdAt,
   picksMade,
   record,
+  editable,
 }: {
   entryId: string;
   entryName: string;
   createdAt: string;
   picksMade: number;
   record: OwnEntryRecord | null;
+  editable: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const editHref = `/pickem/entries/${entryId}/edit`;
 
   return (
-    <div className="rounded-lg border border-edge bg-surface px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
+    <div
+      className={`relative rounded-lg border bg-surface px-4 py-3 ${
+        editable
+          ? "border-edge transition hover:border-pickem-500/60 hover:bg-surface-hover"
+          : "border-edge"
+      }`}
+    >
+      {editable && (
+        <Link
+          href={editHref}
+          aria-label={`Edit picks for ${entryName}`}
+          className="absolute inset-0 z-0 rounded-lg"
+        />
+      )}
+
+      <div className="pointer-events-none relative z-10 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <Link
-            href={`/pickem/entries/${entryId}/edit`}
-            className="truncate text-sm font-medium text-ink hover:text-pickem-400 hover:underline"
-          >
-            {entryName}
-          </Link>
+          {editable ? (
+            <p className="truncate text-sm font-medium text-ink">{entryName}</p>
+          ) : (
+            <Link
+              href={editHref}
+              className="pointer-events-auto truncate text-sm font-medium text-ink hover:text-pickem-400 hover:underline"
+            >
+              {entryName}
+            </Link>
+          )}
           <p className="text-xs text-muted">Entered {formatKickoff(createdAt)}</p>
           {record && (
             <div className="mt-1">
@@ -66,16 +91,25 @@ export default function OwnEntryCard({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="mt-2 text-xs font-medium text-pickem-400 hover:underline"
-      >
-        {open ? "Hide picks" : "Show picks"}
-      </button>
+      <div className="pointer-events-none relative z-10 mt-2 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="pointer-events-auto text-xs font-medium text-pickem-400 hover:underline"
+        >
+          {open ? "Hide picks" : "Show picks"}
+        </button>
+        {editable ? (
+          <span className="text-xs font-semibold text-pickem-400">Tap to edit picks &rarr;</span>
+        ) : (
+          <span className="text-xs font-medium text-muted">Picks locked</span>
+        )}
+      </div>
 
-      <ExpandablePicks entryId={entryId} open={open} isOwn />
+      <div className="relative z-10">
+        <ExpandablePicks entryId={entryId} open={open} isOwn />
+      </div>
     </div>
   );
 }

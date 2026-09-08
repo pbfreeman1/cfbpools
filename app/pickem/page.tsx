@@ -41,6 +41,10 @@ export default async function PickemHomePage() {
   }
 
   const closed = openGamesCount < 6;
+  // An entry can still be edited as long as at least one game in the week's
+  // pool hasn't kicked off — independent of the 6-games "entries closed"
+  // threshold above. Once every game has started, all picks are read-only.
+  const anyGameEditable = openGamesCount > 0;
 
   let entries: { id: string; entry_name: string; created_at: string }[] = [];
   const pickCountByEntry = new Map<string, number>();
@@ -213,6 +217,7 @@ export default async function PickemHomePage() {
                         createdAt={entry.created_at}
                         picksMade={pickCountByEntry.get(entry.id) ?? 0}
                         record={recordByEntry.get(entry.id) ?? null}
+                        editable={anyGameEditable}
                       />
                     ))}
                   </div>
