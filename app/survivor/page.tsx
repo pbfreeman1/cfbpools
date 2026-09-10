@@ -7,6 +7,9 @@ import { formatMonthDay } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
 import EntryCreatedModal from "@/app/survivor/EntryCreatedModal";
+import TeamAvailabilityChart, {
+  type TeamAvailabilityRow,
+} from "@/app/survivor/TeamAvailabilityChart";
 
 type TeamRef = {
   id: string;
@@ -42,6 +45,12 @@ export default async function SurvivorHomePage({
 
   // Public pool-wide info — visible whether or not you're logged in.
   const { data: stats } = await supabase.from("survivor_pool_stats").select("*").single();
+
+  const { data: teamAvailability } = await supabase
+    .from("survivor_team_availability")
+    .select(
+      "team_id, school_name, short_name, primary_color, logo_url, active_entries, available_count"
+    );
 
   const { data: weeks } = await supabase
     .from("schedule")
@@ -230,26 +239,46 @@ export default async function SurvivorHomePage({
       <MatchupStrip />
 
       {/* Public pool stats */}
-      <div className="mb-6 grid grid-cols-3 gap-2 rounded-lg border border-edge bg-surface p-4 text-center">
-        <div>
-          <p className="text-xl font-bold text-ink">{stats?.total_entries ?? 0}</p>
-          <p className="text-xs text-muted">Entries</p>
-        </div>
-        <div>
-          <p className="text-xl font-bold text-alive">{stats?.active_entries ?? 0}</p>
-          <p className="text-xs text-muted">Alive</p>
-        </div>
-        <div>
-          <p className="text-xl font-bold text-dead">{stats?.eliminated_entries ?? 0}</p>
-          <p className="text-xs text-muted">Eliminated</p>
-        </div>
-      </div>
+      {(() => {
+        const totalEntries = stats?.total_entries ?? 0;
+        const grossPot = totalEntries * 30;
+        const payoutPot = Math.round(grossPot * 0.925);
+        const usd = (n: number) => `$${n.toLocaleString("en-US")}`;
+        return (
+          <div className="mb-6 rounded-lg border border-edge bg-surface p-4">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-xl font-bold text-ink">{totalEntries}</p>
+                <p className="text-xs text-muted">Entries</p>
+              </div>
+              <div>
+                <p className="text-xl font-bold text-alive">{stats?.active_entries ?? 0}</p>
+                <p className="text-xs text-muted">Alive</p>
+              </div>
+              <div>
+                <p className="text-xl font-bold text-dead">{stats?.eliminated_entries ?? 0}</p>
+                <p className="text-xs text-muted">Eliminated</p>
+              </div>
+            </div>
+            <div className="mt-3 border-t border-edge pt-3 text-center">
+              <p className="text-2xl font-bold text-gold-400">{usd(payoutPot)}</p>
+              <p className="text-xs text-muted">
+                Total pot after 7.5% admin fee
+                <span className="mx-1 text-edge">&middot;</span>
+                {usd(grossPot)} gross ({totalEntries} &times; $30)
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {nextKickoff && (
         <div className="mb-6">
           <CountdownTimer target={nextKickoff} label="Next kickoff locks picks in" />
         </div>
       )}
+
+      <TeamAvailabilityChart rows={(teamAvailability ?? []) as TeamAvailabilityRow[]} />
 
       <p className="mb-6 text-center text-sm text-muted">
         {currentWeek ? (

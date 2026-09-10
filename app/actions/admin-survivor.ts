@@ -304,22 +304,46 @@ export async function deleteEntryAdmin(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 
   const entryId = formData.get("entryId") as string;
+  if (!entryId) {
+    redirect("/admin/survivor/entries?error=" + encodeURIComponent("Missing entry id"));
+  }
 
-  const [{ data: entry }, { data: picks }] = await Promise.all([
+  const [{ data: entry }, { data: picks }, { data: bonusPicks }] = await Promise.all([
     supabase.from("survivor_entries").select("*").eq("id", entryId).single(),
     supabase.from("survivor_picks").select("*").eq("entry_id", entryId),
+    supabase.from("survivor_bonus_picks").select("*").eq("entry_id", entryId),
   ]);
   if (!entry) {
     redirect("/admin/survivor/entries?error=" + encodeURIComponent("Entry not found"));
   }
 
-  // survivor_picks_entry_id_fkey is ON DELETE CASCADE — deleting the entry
-  // also deletes its picks, so a full snapshot goes into admin_actions
-  // before that happens (survivor_picks_log has no FK to entry_id, so those
-  // history rows survive, but the live picks themselves won't).
-  const { error } = await supabase.from("survivor_entries").delete().eq("id", entryId);
+  // A full snapshot goes into admin_actions BEFORE the delete — the
+  // survivor_picks_log / survivor_bonus_picks_log history rows also survive
+  // (no FK to entry_id), but the live pick rows themselves won't.
+  //
+  // The delete itself goes through admin_delete_survivor_entry() — a
+  // SECURITY DEFINER RPC that checks is_admin(), sets a transaction-local
+  // flag the BEFORE DELETE lock guards on survivor_picks /
+  // survivor_bonus_picks skip for this one path, then cascades. A plain
+  // survivor_entries.delete() here trips those guards for every entry with
+  // a kicked-off pick (i.e. all of them once Week 1 is played) and rolls
+  // back — which used to look like a silent no-op in the UI.
+  const { error } = await supabase.rpc("admin_delete_survivor_entry", { p_entry_id: entryId });
   if (error) {
     redirect("/admin/survivor/entries?error=" + encodeURIComponent(error.message));
+  }
+
+  // Confirm the row is actually gone rather than trusting a clean RPC return.
+  const { data: stillThere } = await supabase
+    .from("survivor_entries")
+    .select("id")
+    .eq("id", entryId)
+    .maybeSingle();
+  if (stillThere) {
+    redirect(
+      "/admin/survivor/entries?error=" +
+        encodeURIComponent("Delete did not take effect — entry still exists.")
+    );
   }
 
   await logAdminAction(
@@ -328,9 +352,9 @@ export async function deleteEntryAdmin(formData: FormData) {
     "delete_entry",
     "survivor_entries",
     entryId,
-    { entry, picks: picks ?? [] },
+    { entry, picks: picks ?? [], bonusPicks: bonusPicks ?? [] },
     {},
-    `Deleted by admin — cascaded ${picks?.length ?? 0} pick(s)`
+    `Deleted by admin — cascaded ${picks?.length ?? 0} pick(s), ${bonusPicks?.length ?? 0} bonus pick(s)`
   );
 
   revalidatePath("/admin/survivor/entries");
