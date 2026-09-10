@@ -44,10 +44,9 @@ function LeaderboardRowCard({
             rank number is no longer shown. */}
         <span className="w-8 flex-shrink-0" aria-hidden="true" />
         <div className="min-w-0 flex-1">
+          {/* Collapsed row shows the entry name only — the entrant's real
+              name lives in the expanded view ("Entrant: …"). */}
           <p className="truncate text-sm font-medium text-ink">{row.entryName}</p>
-          {entrantName && (
-            <p className="truncate text-[11px] text-muted">{entrantName}</p>
-          )}
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             {row.isOwn && (
               <span className="inline-block rounded bg-pickem-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-pickem-400">

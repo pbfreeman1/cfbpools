@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { PickCellData } from "@/app/survivor/PickCell";
-import LockedPicksList, { type LockedWeek, type LockedRow } from "./LockedPicksList";
+import LockedPicksList, { type LockedEntry, type LockedPick } from "./LockedPicksList";
 
 export default async function LockedPicksPage() {
   const supabase = await createClient();
@@ -18,45 +17,49 @@ export default async function LockedPicksPage() {
     .from("survivor_picks_locked")
     .select(
       `entry_id, entry_name, entry_status, week_number,
-       team_name, team_short_name, team_logo_url, team_primary_color,
+       team_name, team_short_name, team_logo_url,
        is_bonus_week, bonus_team_id,
-       bonus_team_name, bonus_team_short_name, bonus_team_logo_url, bonus_team_primary_color`
+       bonus_team_name, bonus_team_short_name, bonus_team_logo_url`
     )
-    .order("week_number", { ascending: false });
+    .order("week_number", { ascending: true });
 
-  const byWeek = new Map<number, LockedRow[]>();
+  // Weeks that have at least one locked pick anywhere in the pool — these
+  // become the table's columns, ascending so Week 1 sits next to the entry
+  // name.
+  const weekNumbers = Array.from(
+    new Set((rows ?? []).map((r) => r.week_number as number))
+  ).sort((a, b) => a - b);
+
+  // Regroup by entry: each entry is one row, its picks keyed by week.
+  const byEntry = new Map<string, LockedEntry>();
   (rows ?? []).forEach((r) => {
-    const pick: PickCellData = {
+    let entry = byEntry.get(r.entry_id);
+    if (!entry) {
+      entry = {
+        entryId: r.entry_id,
+        entryName: r.entry_name || "Entry",
+        eliminated: r.entry_status === "eliminated",
+        picksByWeek: {},
+      };
+      byEntry.set(r.entry_id, entry);
+    }
+    const pick: LockedPick = {
       shortName: r.team_short_name || r.team_name || "—",
       logoUrl: r.team_logo_url,
-      color: r.team_primary_color,
       isBonus: r.is_bonus_week && !!r.bonus_team_id,
       bonusShortName: r.bonus_team_short_name || r.bonus_team_name,
       bonusLogoUrl: r.bonus_team_logo_url,
-      bonusColor: r.bonus_team_primary_color,
     };
-    const list = byWeek.get(r.week_number) ?? [];
-    list.push({
-      entryId: r.entry_id,
-      entryName: r.entry_name || "Entry",
-      eliminated: r.entry_status === "eliminated",
-      pick,
-    });
-    byWeek.set(r.week_number, list);
+    entry.picksByWeek[r.week_number] = pick;
   });
 
   // Alive entries first, then eliminated; alphabetical by entry name within
   // each group.
   const collator = new Intl.Collator("en", { sensitivity: "base" });
-  const weeks: LockedWeek[] = Array.from(byWeek.keys())
-    .sort((a, b) => b - a)
-    .map((weekNumber) => ({
-      weekNumber,
-      rows: byWeek.get(weekNumber)!.sort((a, b) => {
-        if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
-        return collator.compare(a.entryName, b.entryName);
-      }),
-    }));
+  const entries: LockedEntry[] = Array.from(byEntry.values()).sort((a, b) => {
+    if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+    return collator.compare(a.entryName, b.entryName);
+  });
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
@@ -67,10 +70,11 @@ export default async function LockedPicksPage() {
         Locked picks
       </h1>
       <p className="mb-6 text-sm text-muted">
-        Only shows picks once that week&apos;s game has kicked off.
+        Each pick appears once that week&apos;s game has kicked off. A split cell is a bonus
+        week &mdash; both teams had to win.
       </p>
 
-      <LockedPicksList weeks={weeks} />
+      <LockedPicksList weekNumbers={weekNumbers} entries={entries} />
     </main>
   );
 }

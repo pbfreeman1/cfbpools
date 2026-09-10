@@ -140,6 +140,7 @@ export function ExpandablePicks({
               pick.pickedTeamId
             );
             const pickedIsHome = pick.pickedTeamId === pick.homeTeam.id;
+            const pickedTeam = pickedIsHome ? pick.homeTeam : pick.awayTeam;
             const scoreKnown = pick.homeScore !== null && pick.awayScore !== null;
             return (
               <li
@@ -159,13 +160,30 @@ export function ExpandablePicks({
                       logo_url: pick.awayTeam.logoUrl,
                     }}
                   />
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {/* The picked side, called out so a full list scans at a
+                        glance. Blue = "this is the pick"; the green/red W-L
+                        chip on the right is a separate axis. */}
+                    <span className="flex-shrink-0 rounded bg-pickem-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-pickem-300 ring-1 ring-inset ring-pickem-500/40">
+                      Pick
+                    </span>
+                    {pickedTeam.logoUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={pickedTeam.logoUrl}
+                        alt=""
+                        className="h-4 w-4 flex-shrink-0 object-contain"
+                      />
+                    )}
+                    <span className="truncate text-[11px] font-semibold text-ink">
+                      {pickedTeam.name}
+                      {spread ? ` ${spread}` : ""}
+                    </span>
+                  </div>
                   <p className="mt-0.5 text-[11px] text-muted">
-                    Pick: {pickedIsHome ? pick.homeTeam.name : pick.awayTeam.name}
-                    {spread ? ` ${spread}` : ""}
                     {scoreKnown
-                      ? ` · ${pick.awayTeam.name} ${pick.awayScore} – ${pick.homeTeam.name} ${pick.homeScore}`
-                      : ""}
-                    {!scoreKnown ? ` · ${formatScheduleRow(pick.kickoffTime)}` : ""}
+                      ? `${pick.awayTeam.name} ${pick.awayScore} – ${pick.homeTeam.name} ${pick.homeScore}`
+                      : formatScheduleRow(pick.kickoffTime)}
                   </p>
                 </div>
                 {state && (
