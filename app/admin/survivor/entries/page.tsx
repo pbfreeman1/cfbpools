@@ -63,6 +63,7 @@ export default async function AdminSurvivorEntriesPage({
     <div className="mx-auto max-w-5xl">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold uppercase tracking-wide text-gold-400">Entries</h1>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- /entries/export is a CSV route handler, not a page (the [entryId] dynamic segment makes the linter think otherwise) */}
         <a
           href="/admin/survivor/entries/export"
           className="rounded-md border border-edge px-3 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-hover"
@@ -245,6 +246,12 @@ export default async function AdminSurvivorEntriesPage({
                   className="text-xs font-medium text-gold-400 hover:underline"
                 >
                   Edit
+                </Link>
+                <Link
+                  href={`/admin/survivor/entries/${entry.id}`}
+                  className="text-xs font-medium text-gold-400 hover:underline"
+                >
+                  Picks
                 </Link>
                 <DeleteEntryButton entryId={entry.id} label={entry.entry_name || `Entry ${entry.entry_number}`} />
               </div>

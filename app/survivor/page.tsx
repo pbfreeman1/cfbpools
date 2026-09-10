@@ -67,15 +67,25 @@ export default async function SurvivorHomePage({
 
   let nextKickoff: string | null = null;
   if (currentWeek) {
-    const { data: nextGame } = await supabase
+    // Only SEC-involving games can lock a Survivor pick, so the "next lock"
+    // countdown must ignore non-SEC games that week (same eligibility filter
+    // the pick UI and week-locked logic below use: home OR away is SEC).
+    const { data: upcomingGames } = await supabase
       .from("games")
-      .select("kickoff_time")
+      .select(
+        `kickoff_time,
+         home_team:master_teams!games_home_team_id_fkey(conference),
+         away_team:master_teams!games_away_team_id_fkey(conference)`
+      )
       .eq("schedule_id", currentWeek.id)
       .gt("kickoff_time", today.toISOString())
-      .order("kickoff_time")
-      .limit(1)
-      .maybeSingle();
-    nextKickoff = nextGame?.kickoff_time ?? null;
+      .order("kickoff_time");
+    const nextSecGame = (upcomingGames ?? []).find((g) => {
+      const home = g.home_team as unknown as { conference: string };
+      const away = g.away_team as unknown as { conference: string };
+      return home.conference === "SEC" || away.conference === "SEC";
+    });
+    nextKickoff = nextSecGame?.kickoff_time ?? null;
   }
 
   // Personalized section — only meaningful if logged in.

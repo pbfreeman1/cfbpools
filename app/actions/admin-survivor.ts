@@ -300,6 +300,201 @@ export async function toggleDuesPaid(formData: FormData) {
   redirect("/admin/survivor/entries");
 }
 
+// ---------------------------------------------------------------------------
+// Per-week pick editing (full season, no lock restriction)
+//
+// These call the admin-gated SECURITY DEFINER RPCs
+// (admin_set_survivor_pick / admin_delete_survivor_pick /
+// admin_set_survivor_bonus_pick / admin_delete_survivor_bonus_pick), each of
+// which sets `app.bypass_survivor_locks` so the kickoff/elimination guards in
+// validate_survivor_pick() are skipped. The SEC-team, has-a-game, no-reuse
+// and 2-bonus-cap checks are NOT bypassed — a violation surfaces as the
+// Postgres error message on the redirect.
+//
+// A pick row's is_bonus_week flag is derived: a DB trigger sets it whenever a
+// survivor_bonus_picks row exists for that entry+week. So a week that is
+// currently a bonus week must be edited through the *bonus* RPCs — routing it
+// through admin_set/delete_survivor_pick would leave the survivor_bonus_picks
+// row orphaned and the two tables out of sync. The helpers below detect an
+// existing bonus row first and delete it (which re-syncs survivor_picks back
+// to a plain regular pick via the unsync trigger) before touching the
+// regular pick.
+
+const survivorEntryDetailPath = (entryId: string) => `/admin/survivor/entries/${entryId}`;
+
+async function snapshotSurvivorWeek(
+  supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
+  entryId: string,
+  scheduleId: string
+) {
+  const [{ data: pick }, { data: bonus }] = await Promise.all([
+    supabase
+      .from("survivor_picks")
+      .select("*")
+      .eq("entry_id", entryId)
+      .eq("schedule_id", scheduleId)
+      .maybeSingle(),
+    supabase
+      .from("survivor_bonus_picks")
+      .select("*")
+      .eq("entry_id", entryId)
+      .eq("schedule_id", scheduleId)
+      .maybeSingle(),
+  ]);
+  return { pick: pick ?? null, bonus: bonus ?? null };
+}
+
+export async function adminSetSurvivorPick(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const teamId = formData.get("teamId") as string;
+  const detailPath = survivorEntryDetailPath(entryId);
+
+  if (!entryId || !scheduleId || !teamId) {
+    redirect(`${detailPath}?error=` + encodeURIComponent("Missing pick reference"));
+  }
+
+  const before = await snapshotSurvivorWeek(supabase, entryId, scheduleId);
+
+  // Currently a bonus week -> drop the bonus row first so the regular-pick
+  // RPC isn't fighting the sync triggers / leaving an orphan.
+  if (before.bonus) {
+    const { error: delErr } = await supabase.rpc("admin_delete_survivor_bonus_pick", {
+      p_entry_id: entryId,
+      p_schedule_id: scheduleId,
+    });
+    if (delErr) {
+      redirect(`${detailPath}?error=` + encodeURIComponent(delErr.message));
+    }
+  }
+
+  const { error } = await supabase.rpc("admin_set_survivor_pick", {
+    p_entry_id: entryId,
+    p_schedule_id: scheduleId,
+    p_team_id: teamId,
+  });
+  if (error) {
+    redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "admin_set_survivor_pick",
+    "survivor_picks",
+    entryId,
+    { schedule_id: scheduleId, ...before },
+    { schedule_id: scheduleId, team_id: teamId, is_bonus_week: false },
+    "Survivor entries — regular pick set by admin (lock bypassed)"
+  );
+
+  revalidatePath(detailPath);
+  revalidatePath("/admin/survivor/entries");
+  redirect(`${detailPath}?saved=1`);
+}
+
+export async function adminSetSurvivorBonusPick(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const teamAId = formData.get("teamAId") as string;
+  const teamBId = formData.get("teamBId") as string;
+  const detailPath = survivorEntryDetailPath(entryId);
+
+  if (!entryId || !scheduleId || !teamAId || !teamBId) {
+    redirect(
+      `${detailPath}?error=` +
+        encodeURIComponent("A bonus week needs both the regular team and the bonus team")
+    );
+  }
+  if (teamAId === teamBId) {
+    redirect(`${detailPath}?error=` + encodeURIComponent("A bonus week needs two different teams"));
+  }
+
+  const before = await snapshotSurvivorWeek(supabase, entryId, scheduleId);
+
+  const { error } = await supabase.rpc("admin_set_survivor_bonus_pick", {
+    p_entry_id: entryId,
+    p_schedule_id: scheduleId,
+    p_team_a_id: teamAId,
+    p_team_b_id: teamBId,
+  });
+  if (error) {
+    redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "admin_set_survivor_bonus_pick",
+    "survivor_bonus_picks",
+    entryId,
+    { schedule_id: scheduleId, ...before },
+    { schedule_id: scheduleId, team_a_id: teamAId, team_b_id: teamBId },
+    "Survivor entries — bonus pick set by admin (lock bypassed)"
+  );
+
+  revalidatePath(detailPath);
+  revalidatePath("/admin/survivor/entries");
+  revalidatePath("/admin/survivor/bonus");
+  redirect(`${detailPath}?saved=1`);
+}
+
+export async function adminDeleteSurvivorPick(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const detailPath = survivorEntryDetailPath(entryId);
+
+  if (!entryId || !scheduleId) {
+    redirect(`${detailPath}?error=` + encodeURIComponent("Missing pick reference"));
+  }
+
+  const before = await snapshotSurvivorWeek(supabase, entryId, scheduleId);
+
+  if (before.bonus) {
+    const { error: bonusErr } = await supabase.rpc("admin_delete_survivor_bonus_pick", {
+      p_entry_id: entryId,
+      p_schedule_id: scheduleId,
+    });
+    if (bonusErr) {
+      redirect(`${detailPath}?error=` + encodeURIComponent(bonusErr.message));
+    }
+  }
+
+  // The unsync trigger only flips is_bonus_week back off — the regular
+  // survivor_picks row (now team_a) still needs removing for a full clear.
+  if (before.pick) {
+    const { error } = await supabase.rpc("admin_delete_survivor_pick", {
+      p_entry_id: entryId,
+      p_schedule_id: scheduleId,
+    });
+    if (error) {
+      redirect(`${detailPath}?error=` + encodeURIComponent(error.message));
+    }
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "admin_clear_survivor_pick",
+    "survivor_picks",
+    entryId,
+    { schedule_id: scheduleId, ...before },
+    {},
+    "Survivor entries — pick cleared by admin (lock bypassed)"
+  );
+
+  revalidatePath(detailPath);
+  revalidatePath("/admin/survivor/entries");
+  revalidatePath("/admin/survivor/bonus");
+  redirect(`${detailPath}?cleared=1`);
+}
+
 export async function deleteEntryAdmin(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 
