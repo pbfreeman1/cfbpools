@@ -1,14 +1,52 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { SEASON } from "@/lib/season";
 import LockedPicksList, { type LockedEntry, type LockedPick } from "./LockedPicksList";
+import WeekFilterPills from "./WeekFilterPills";
+import WeeklyPickCountChart, { type WeekPickCountRow } from "./WeeklyPickCountChart";
 
-export default async function LockedPicksPage() {
+export default async function LockedPicksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  const params = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Current week = the schedule row whose [start_date, end_date) span
+  // contains today. Half-open on purpose: consecutive weeks' start/end
+  // dates overlap by a day, so a same-day-inclusive check on both ends
+  // would match two weeks at once.
+  const { data: weeks } = await supabase
+    .from("schedule")
+    .select("week_number, start_date, end_date")
+    .eq("season", SEASON)
+    .order("week_number");
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentWeekRow =
+    (weeks ?? []).find((w) => todayStr >= w.start_date && todayStr < w.end_date) ??
+    (weeks ?? []).find((w) => todayStr < w.start_date) ??
+    (weeks ?? [])[(weeks?.length ?? 1) - 1];
+  const currentWeekNumber = currentWeekRow?.week_number ?? 1;
+
+  const selectableWeeks = Array.from({ length: currentWeekNumber }, (_, i) => i + 1);
+  const requestedWeek = parseInt(params.week ?? "", 10);
+  const selectedWeek = selectableWeeks.includes(requestedWeek) ? requestedWeek : currentWeekNumber;
+
+  const { data: pickCountRows } = await supabase
+    .from("survivor_week_pick_counts")
+    .select(
+      `team_id, school_name, short_name, primary_color, logo_url,
+       kickoff_time, game_started, pick_count, bonus_pick_count, total_pick_count`
+    )
+    .eq("season", SEASON)
+    .eq("week_number", selectedWeek);
 
   // survivor_picks_locked is owner-privileged and only surfaces a pick once
   // one of its teams' games has kicked off — the pre-lock privacy rule lives
@@ -73,6 +111,18 @@ export default async function LockedPicksPage() {
         Each pick appears once that week&apos;s game has kicked off. A split cell is a bonus
         week &mdash; both teams had to win.
       </p>
+
+      <div>
+        <WeekFilterPills
+          weekNumbers={selectableWeeks}
+          selectedWeek={selectedWeek}
+          currentWeek={currentWeekNumber}
+        />
+        <WeeklyPickCountChart
+          weekNumber={selectedWeek}
+          rows={(pickCountRows ?? []) as WeekPickCountRow[]}
+        />
+      </div>
 
       <LockedPicksList weekNumbers={weekNumbers} entries={entries} />
     </main>
