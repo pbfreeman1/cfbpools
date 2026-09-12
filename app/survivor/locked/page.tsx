@@ -112,9 +112,7 @@ export default async function LockedPicksPage({
         week &mdash; both teams had to win.
       </p>
 
-      <LockedPicksList weekNumbers={weekNumbers} entries={entries} />
-
-      <div className="mt-10">
+      <div>
         <WeekFilterPills
           weekNumbers={selectableWeeks}
           selectedWeek={selectedWeek}
@@ -125,6 +123,8 @@ export default async function LockedPicksPage({
           rows={(pickCountRows ?? []) as WeekPickCountRow[]}
         />
       </div>
+
+      <LockedPicksList weekNumbers={weekNumbers} entries={entries} />
     </main>
   );
 }
