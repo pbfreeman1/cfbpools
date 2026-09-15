@@ -76,6 +76,8 @@ export default async function LockedPicksPage({
       entry = {
         entryId: r.entry_id,
         entryName: r.entry_name || "Entry",
+        ownerName: null,
+        bonusFinalizedCount: 0,
         eliminated: r.entry_status === "eliminated",
         picksByWeek: {},
       };
@@ -91,6 +93,40 @@ export default async function LockedPicksPage({
     entry.picksByWeek[r.week_number] = pick;
   });
 
+  const entryIds = Array.from(byEntry.keys());
+
+  // Owner display name ("John D.") — joined separately since
+  // survivor_picks_locked doesn't carry user_id.
+  if (entryIds.length > 0) {
+    const { data: ownerRows } = await supabase
+      .from("survivor_entries")
+      .select("id, profiles:profiles!survivor_entries_user_id_fkey(first_name, last_name)")
+      .in("id", entryIds);
+    const owners = (ownerRows ?? []) as unknown as {
+      id: string;
+      profiles: { first_name: string | null; last_name: string | null } | null;
+    }[];
+    owners.forEach((r) => {
+      const owner = r.profiles;
+      const first = owner?.first_name?.trim();
+      const lastInitial = owner?.last_name?.trim()?.[0];
+      if (!first) return;
+      const entry = byEntry.get(r.id);
+      if (entry) entry.ownerName = lastInitial ? `${first} ${lastInitial}.` : first;
+    });
+  }
+
+  // Finalized bonus-pick count per entry — only weeks that have already
+  // ended count; the current/future weeks' bonus picks are still pending.
+  const { data: bonusRows } = await supabase
+    .from("survivor_bonus_picks")
+    .select("entry_id, schedule!inner(end_date)")
+    .lt("schedule.end_date", new Date().toISOString());
+  (bonusRows ?? []).forEach((r) => {
+    const entry = byEntry.get(r.entry_id);
+    if (entry) entry.bonusFinalizedCount += 1;
+  });
+
   // Alive entries first, then eliminated; alphabetical by entry name within
   // each group.
   const collator = new Intl.Collator("en", { sensitivity: "base" });
@@ -98,6 +134,11 @@ export default async function LockedPicksPage({
     if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
     return collator.compare(a.entryName, b.entryName);
   });
+
+  const { count: totalActiveEntries } = await supabase
+    .from("survivor_entries")
+    .select("*", { count: "exact", head: true })
+    .eq("status", "active");
 
   return (
     <main className="mx-auto min-h-screen max-w-sm px-6 py-12 sm:max-w-xl md:max-w-3xl lg:max-w-5xl">
@@ -124,7 +165,11 @@ export default async function LockedPicksPage({
         />
       </div>
 
-      <LockedPicksList weekNumbers={weekNumbers} entries={entries} />
+      <LockedPicksList
+        weekNumbers={weekNumbers}
+        entries={entries}
+        totalActiveEntries={totalActiveEntries ?? 0}
+      />
     </main>
   );
 }

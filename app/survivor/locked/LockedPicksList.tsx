@@ -13,6 +13,8 @@ export type LockedPick = {
 export type LockedEntry = {
   entryId: string;
   entryName: string;
+  ownerName: string | null;
+  bonusFinalizedCount: number;
   eliminated: boolean;
   picksByWeek: Record<number, LockedPick>;
 };
@@ -74,9 +76,11 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
 export default function LockedPicksList({
   weekNumbers,
   entries,
+  totalActiveEntries,
 }: {
   weekNumbers: number[];
   entries: LockedEntry[];
+  totalActiveEntries: number;
 }) {
   const [query, setQuery] = useState("");
 
@@ -109,7 +113,7 @@ export default function LockedPicksList({
         <div className="overflow-hidden rounded-lg border border-edge bg-surface">
           <div className="flex">
             {/* Fixed entry-name column */}
-            <div className="flex-shrink-0 border-r border-edge" style={{ width: 136 }}>
+            <div className="flex-shrink-0 border-r border-edge" style={{ width: 152 }}>
               <div
                 className="flex items-end px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted"
                 style={{ height: HEAD_H }}
@@ -119,17 +123,29 @@ export default function LockedPicksList({
               {filtered.map((e, i) => (
                 <div
                   key={e.entryId}
-                  className={`flex flex-col justify-center px-3 ${rowShade(i)}`}
+                  className={`flex flex-col justify-center gap-0.5 px-3 ${rowShade(i)}`}
                   style={{ height: ROW_H }}
                 >
-                  <span className="truncate text-xs font-medium text-ink">{e.entryName}</span>
-                  <span
-                    className={
-                      e.eliminated ? "text-[10px] text-dead" : "text-[10px] text-alive"
-                    }
-                  >
-                    {e.eliminated ? "Eliminated" : "Alive"}
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-xs font-medium text-ink">{e.entryName}</span>
+                    <span
+                      title="Bonus picks finalized"
+                      className="shrink-0 rounded bg-app px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-muted"
+                    >
+                      {e.bonusFinalizedCount}/2
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 overflow-hidden text-[10px]">
+                    {e.ownerName && (
+                      <>
+                        <span className="truncate text-muted">{e.ownerName}</span>
+                        <span className="text-muted">&middot;</span>
+                      </>
+                    )}
+                    <span className={e.eliminated ? "text-dead" : "text-alive"}>
+                      {e.eliminated ? "Eliminated" : "Alive"}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -172,7 +188,17 @@ export default function LockedPicksList({
       )}
 
       <p className="mt-3 text-xs text-muted">
-        {filtered.length} {filtered.length === 1 ? "entry" : "entries"} shown.
+        {query.trim() ? (
+          <>
+            {filtered.length} match{filtered.length === 1 ? "" : "es"} &ldquo;{query}&rdquo;
+            {" "}(of {totalActiveEntries} total active entries).
+          </>
+        ) : (
+          <>
+            {totalActiveEntries} total active entries &middot; {entries.length} with a locked
+            pick shown.
+          </>
+        )}
       </p>
     </div>
   );
