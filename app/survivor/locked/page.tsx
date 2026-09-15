@@ -48,13 +48,52 @@ export default async function LockedPicksPage({
     .eq("season", SEASON)
     .eq("week_number", selectedWeek);
 
+  // The entry list is driven by survivor_entries, not survivor_picks_locked —
+  // that view only contains entries with at least one locked pick, so an
+  // entry with none simply never joins through and silently vanishes from
+  // the table (254 active entries but only 242 with a Week 2 pick, say).
+  // Picks are merged in per entry+week afterward; an entry with no matching
+  // row just keeps its empty picksByWeek, which PickBox already renders as
+  // a plain "—" placeholder.
+  const { data: allEntriesData } = await supabase
+    .from("survivor_entries")
+    .select(
+      `id, entry_name, status, profiles:profiles!survivor_entries_user_id_fkey(first_name, last_name)`
+    );
+  const allEntries = (allEntriesData ?? []) as unknown as {
+    id: string;
+    entry_name: string | null;
+    status: string;
+    profiles: { first_name: string | null; last_name: string | null } | null;
+  }[];
+
+  type SortableEntry = LockedEntry & { lastName: string; firstName: string };
+
+  const byEntry = new Map<string, SortableEntry>();
+  allEntries.forEach((e) => {
+    const owner = e.profiles;
+    const first = owner?.first_name?.trim() ?? "";
+    const last = owner?.last_name?.trim() ?? "";
+    const lastInitial = last[0];
+    byEntry.set(e.id, {
+      entryId: e.id,
+      entryName: e.entry_name || "Entry",
+      ownerName: first ? (lastInitial ? `${first} ${lastInitial}.` : first) : null,
+      bonusFinalizedCount: 0,
+      eliminated: e.status === "eliminated",
+      picksByWeek: {},
+      lastName: last,
+      firstName: first,
+    });
+  });
+
   // survivor_picks_locked is owner-privileged and only surfaces a pick once
   // one of its teams' games has kicked off — the pre-lock privacy rule lives
   // in the view's WHERE clause, so this page never has to guard it itself.
   const { data: rows } = await supabase
     .from("survivor_picks_locked")
     .select(
-      `entry_id, entry_name, entry_status, week_number,
+      `entry_id, week_number,
        team_name, team_short_name, team_logo_url,
        is_bonus_week, bonus_team_id,
        bonus_team_name, bonus_team_short_name, bonus_team_logo_url`
@@ -68,21 +107,9 @@ export default async function LockedPicksPage({
     new Set((rows ?? []).map((r) => r.week_number as number))
   ).sort((a, b) => a - b);
 
-  // Regroup by entry: each entry is one row, its picks keyed by week.
-  const byEntry = new Map<string, LockedEntry>();
   (rows ?? []).forEach((r) => {
-    let entry = byEntry.get(r.entry_id);
-    if (!entry) {
-      entry = {
-        entryId: r.entry_id,
-        entryName: r.entry_name || "Entry",
-        ownerName: null,
-        bonusFinalizedCount: 0,
-        eliminated: r.entry_status === "eliminated",
-        picksByWeek: {},
-      };
-      byEntry.set(r.entry_id, entry);
-    }
+    const entry = byEntry.get(r.entry_id);
+    if (!entry) return;
     const pick: LockedPick = {
       shortName: r.team_short_name || r.team_name || "—",
       logoUrl: r.team_logo_url,
@@ -92,29 +119,6 @@ export default async function LockedPicksPage({
     };
     entry.picksByWeek[r.week_number] = pick;
   });
-
-  const entryIds = Array.from(byEntry.keys());
-
-  // Owner display name ("John D.") — joined separately since
-  // survivor_picks_locked doesn't carry user_id.
-  if (entryIds.length > 0) {
-    const { data: ownerRows } = await supabase
-      .from("survivor_entries")
-      .select("id, profiles:profiles!survivor_entries_user_id_fkey(first_name, last_name)")
-      .in("id", entryIds);
-    const owners = (ownerRows ?? []) as unknown as {
-      id: string;
-      profiles: { first_name: string | null; last_name: string | null } | null;
-    }[];
-    owners.forEach((r) => {
-      const owner = r.profiles;
-      const first = owner?.first_name?.trim();
-      const lastInitial = owner?.last_name?.trim()?.[0];
-      if (!first) return;
-      const entry = byEntry.get(r.id);
-      if (entry) entry.ownerName = lastInitial ? `${first} ${lastInitial}.` : first;
-    });
-  }
 
   // Finalized bonus-pick count per entry — only weeks that have already
   // ended count; the current/future weeks' bonus picks are still pending.
@@ -132,13 +136,19 @@ export default async function LockedPicksPage({
     if (entry) entry.bonusFinalizedCount += 1;
   });
 
-  // Alive entries first, then eliminated; alphabetical by entry name within
-  // each group.
+  // Alive entries first, then alphabetical by owner last name / first name /
+  // entry name within each group.
   const collator = new Intl.Collator("en", { sensitivity: "base" });
-  const entries: LockedEntry[] = Array.from(byEntry.values()).sort((a, b) => {
-    if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
-    return collator.compare(a.entryName, b.entryName);
-  });
+  const entries: LockedEntry[] = Array.from(byEntry.values())
+    .sort((a, b) => {
+      if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+      const byLast = collator.compare(a.lastName, b.lastName);
+      if (byLast !== 0) return byLast;
+      const byFirst = collator.compare(a.firstName, b.firstName);
+      if (byFirst !== 0) return byFirst;
+      return collator.compare(a.entryName, b.entryName);
+    })
+    .map(({ lastName, firstName, ...rest }) => rest);
 
   const { count: totalActiveEntries } = await supabase
     .from("survivor_entries")

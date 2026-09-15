@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type UIEvent } from "react";
 
 export type LockedPick = {
   shortName: string;
@@ -19,16 +19,24 @@ export type LockedEntry = {
   picksByWeek: Record<number, LockedPick>;
 };
 
-// One column per locked week, one row per entry. The entry-name column is a
-// genuinely separate flex-shrink-0 sibling OUTSIDE the horizontally
-// scrolling week grid (never `position: sticky` — unreliable mid-scroll on
-// mobile Safari, per the project convention). Row heights + alternating
-// shading are kept in lockstep between the two halves by iterating the same
-// filtered list with the same index in both.
+// One column per locked week, one row per entry. Each row is its own flex
+// container: a fixed-width name cell (which must be free to wrap to a
+// second line for long names) directly followed by that row's own
+// overflow-x-auto week grid — never `position: sticky` — unreliable
+// mid-scroll on mobile Safari, per the project convention. Because the name
+// cell can grow taller than the pick-cell row's own content, they can't be
+// two independent same-height stacks any more (a wrapped name would push
+// every row below it out of alignment) — each row's two halves are true
+// flex siblings instead, so the browser sizes the row to fit whichever side
+// is taller. The tradeoff: each row's week grid is its own scroll container,
+// so horizontal scroll position is kept in sync across all of them (plus
+// the header) via a plain scrollLeft mirror on scroll — no React state,
+// just direct DOM writes, so it doesn't re-render on every scroll pixel.
 
 const COL_W = 48;
-const ROW_H = 54;
 const HEAD_H = 34;
+// Floor, not a fixed height — a row grows past this when its name wraps.
+const MIN_ROW_H = 54;
 
 function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
   if (!pick) return <span className="text-xs text-edge">&ndash;</span>;
@@ -93,6 +101,27 @@ export default function LockedPicksList({
 }) {
   const [query, setQuery] = useState("");
 
+  // Every row's own week-grid scroll container (plus the header's),
+  // registered by a stable key so scrolling any one of them can mirror its
+  // scrollLeft onto all the others.
+  const scrollEls = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  function registerScrollEl(key: string) {
+    return (el: HTMLDivElement | null) => {
+      if (el) scrollEls.current.set(key, el);
+      else scrollEls.current.delete(key);
+    };
+  }
+
+  function handleScroll(sourceKey: string) {
+    return (event: UIEvent<HTMLDivElement>) => {
+      const left = event.currentTarget.scrollLeft;
+      scrollEls.current.forEach((el, key) => {
+        if (key !== sourceKey && el.scrollLeft !== left) el.scrollLeft = left;
+      });
+    };
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return entries;
@@ -120,79 +149,90 @@ export default function LockedPicksList({
         <p className="text-sm text-muted">No entries match &ldquo;{query}&rdquo;.</p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-edge bg-surface">
-          <div className="flex">
-            {/* Fixed entry-name column */}
-            <div className="flex-shrink-0 border-r border-edge" style={{ width: 152 }}>
-              <div
-                className="flex items-end px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted"
-                style={{ height: HEAD_H }}
-              >
-                Entry
-              </div>
-              {filtered.map((e, i) => (
-                <div
-                  key={e.entryId}
-                  className={`flex flex-col justify-center gap-0.5 px-3 ${rowShade(i)}`}
-                  style={{ height: ROW_H }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-xs font-medium text-ink">{e.entryName}</span>
-                    <span
-                      title="Bonus picks finalized"
-                      className="shrink-0 rounded bg-app px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-muted"
-                    >
-                      {e.bonusFinalizedCount}/2
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 overflow-hidden text-[10px]">
-                    {e.ownerName && (
-                      <>
-                        <span className="truncate text-muted">{e.ownerName}</span>
-                        <span className="text-muted">&middot;</span>
-                      </>
-                    )}
-                    <span className={e.eliminated ? "text-dead" : "text-alive"}>
-                      {e.eliminated ? "Eliminated" : "Alive"}
-                    </span>
-                  </div>
-                </div>
-              ))}
+          {/* Header row */}
+          <div className="flex border-b border-edge">
+            <div
+              className="flex flex-shrink-0 items-end px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted"
+              style={{ width: 152, height: HEAD_H }}
+            >
+              Entry
             </div>
-
-            {/* Scrollable week grid */}
-            <div className="flex-1 overflow-x-auto">
-              <div style={{ width: gridWidth }}>
-                <div
-                  className="flex items-end border-b border-edge pb-1"
-                  style={{ height: HEAD_H }}
-                >
-                  {weekNumbers.map((w) => (
-                    <div
-                      key={w}
-                      className="text-center font-data text-[10px] font-medium uppercase text-muted"
-                      style={{ width: COL_W }}
-                    >
-                      Wk{w}
-                    </div>
-                  ))}
-                </div>
-
-                {filtered.map((e, i) => (
+            <div
+              className="flex-1 overflow-x-auto"
+              ref={registerScrollEl("header")}
+              onScroll={handleScroll("header")}
+            >
+              <div className="flex items-end pb-1" style={{ width: gridWidth, height: HEAD_H }}>
+                {weekNumbers.map((w) => (
                   <div
-                    key={e.entryId}
-                    className={`flex items-center ${rowShade(i)}`}
-                    style={{ height: ROW_H }}
+                    key={w}
+                    className="text-center font-data text-[10px] font-medium uppercase text-muted"
+                    style={{ width: COL_W }}
                   >
-                    {weekNumbers.map((w) => (
-                      <div key={w} className="flex justify-center" style={{ width: COL_W }}>
-                        <PickBox pick={e.picksByWeek[w]} dim={e.eliminated} />
-                      </div>
-                    ))}
+                    Wk{w}
                   </div>
                 ))}
               </div>
             </div>
           </div>
+
+          {/* One flex row per entry: a wrap-capable name cell plus that
+              row's own scrollable week grid, so a taller (wrapped) name
+              only grows its own row instead of misaligning every row below
+              it. */}
+          {filtered.map((e, i) => (
+            <div
+              key={e.entryId}
+              className={`flex items-stretch ${rowShade(i)} ${
+                i < filtered.length - 1 ? "border-b border-edge/60" : ""
+              }`}
+            >
+              <div
+                className="flex flex-shrink-0 flex-col justify-center gap-0.5 px-3 py-2"
+                style={{ width: 152 }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 break-words text-xs font-medium text-ink">
+                    {e.entryName}
+                  </span>
+                  <span
+                    title="Bonus picks finalized"
+                    className="shrink-0 rounded bg-app px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-muted"
+                  >
+                    {e.bonusFinalizedCount}/2
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-1 text-[10px]">
+                  {e.ownerName && (
+                    <>
+                      <span className="text-muted">{e.ownerName}</span>
+                      <span className="text-muted">&middot;</span>
+                    </>
+                  )}
+                  <span className={e.eliminated ? "text-dead" : "text-alive"}>
+                    {e.eliminated ? "Eliminated" : "Alive"}
+                  </span>
+                </div>
+              </div>
+
+              <div
+                className="flex-1 overflow-x-auto"
+                ref={registerScrollEl(e.entryId)}
+                onScroll={handleScroll(e.entryId)}
+              >
+                <div
+                  className="flex h-full items-center"
+                  style={{ width: gridWidth, minHeight: MIN_ROW_H }}
+                >
+                  {weekNumbers.map((w) => (
+                    <div key={w} className="flex justify-center" style={{ width: COL_W }}>
+                      <PickBox pick={e.picksByWeek[w]} dim={e.eliminated} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -204,8 +244,8 @@ export default function LockedPicksList({
           </>
         ) : (
           <>
-            {totalActiveEntries} total active entries &middot; {entries.length} with a locked
-            pick shown.
+            {totalActiveEntries} total active entries &middot; {entries.length} shown (including
+            eliminated).
           </>
         )}
       </p>
