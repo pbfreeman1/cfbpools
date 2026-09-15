@@ -59,8 +59,11 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
           </div>
         </div>
 
-        <span className="absolute -top-1.5 -right-1.5 inline-flex items-center gap-0.5 rounded-full bg-yellow-400 px-1.5 py-0.5 text-[10px] font-bold leading-none text-yellow-900 shadow-sm">
-          ⭐ Bonus
+        <span
+          title="Bonus week"
+          className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-yellow-400 text-[8px] leading-none text-yellow-900 shadow-sm"
+        >
+          ★
         </span>
       </div>
     );
