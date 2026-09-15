@@ -54,7 +54,7 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
           )}
         </div>
         <span className="absolute right-0 top-0 rounded-bl bg-gold-500 px-1 text-[8px] font-bold leading-tight text-app">
-          2
+          ⭐
         </span>
       </div>
     );
