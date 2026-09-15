@@ -118,9 +118,14 @@ export default async function LockedPicksPage({
 
   // Finalized bonus-pick count per entry — only weeks that have already
   // ended count; the current/future weeks' bonus picks are still pending.
+  // Bonus picks are read off survivor_picks (is_bonus_week + bonus_team_id),
+  // not survivor_bonus_picks — that table isn't populated for every bonus
+  // pick in practice, so it undercounts.
   const { data: bonusRows } = await supabase
-    .from("survivor_bonus_picks")
+    .from("survivor_picks")
     .select("entry_id, schedule!inner(end_date)")
+    .eq("is_bonus_week", true)
+    .not("bonus_team_id", "is", null)
     .lt("schedule.end_date", new Date().toISOString());
   (bonusRows ?? []).forEach((r) => {
     const entry = byEntry.get(r.entry_id);

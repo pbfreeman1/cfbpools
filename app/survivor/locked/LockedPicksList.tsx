@@ -53,8 +53,8 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
             <img src={pick.bonusLogoUrl} alt="" className="h-4 w-4 object-contain" />
           )}
         </div>
-        <span className="absolute right-0 top-0 rounded-bl bg-gold-500 px-1 text-[8px] font-bold leading-tight text-app">
-          ⭐
+        <span className="absolute right-0 top-0 inline-flex items-center gap-0.5 rounded-full bg-yellow-400 px-1.5 py-0.5 text-xs font-bold text-yellow-900">
+          ⭐ Bonus
         </span>
       </div>
     );
