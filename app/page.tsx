@@ -16,22 +16,6 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let entryCount = 0;
-  if (user) {
-    const { count } = await supabase
-      .from("survivor_entries")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id);
-    entryCount = count ?? 0;
-  }
-
-  const survivorCtaLabel =
-    entryCount >= 2
-      ? "Make This Week's Picks"
-      : entryCount === 1
-        ? "Add a Second Entry"
-        : "Enter the Survivor Pool";
-
   const { data: appSettings } = await supabase
     .from("app_settings")
     .select("current_week_id")
@@ -132,7 +116,7 @@ export default async function Home() {
                 href="/survivor"
                 className="mt-auto block rounded-lg bg-gold-500 px-6 py-4 text-center font-display text-base font-bold uppercase tracking-wide text-app shadow-lg shadow-gold-500/20 transition hover:bg-gold-600 hover:shadow-gold-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-300 focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
-                {survivorCtaLabel}
+                Survivor Home
               </Link>
             </section>
 
