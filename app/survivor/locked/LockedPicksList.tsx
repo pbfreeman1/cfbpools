@@ -13,6 +13,8 @@ export type LockedPick = {
 export type LockedEntry = {
   entryId: string;
   entryName: string;
+  ownerName: string | null;
+  bonusFinalizedCount: number;
   eliminated: boolean;
   picksByWeek: Record<number, LockedPick>;
 };
@@ -37,22 +39,31 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
     return (
       <div
         title={`${pick.shortName} + ${pick.bonusShortName ?? "?"} — bonus week (both had to win)`}
-        className={`relative flex h-9 w-9 overflow-hidden rounded-md bg-white ring-1 ring-gold-500 ${dimCls}`}
+        className={`relative flex h-9 w-9 ${dimCls}`}
       >
-        <div className="flex w-1/2 items-center justify-center border-r border-black/15">
-          {pick.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={pick.logoUrl} alt="" className="h-4 w-4 object-contain" />
-          )}
+        {/* Clips the split-logo halves only — the badge below is a sibling
+            outside this box so it can overlay past the card's edge instead
+            of getting clipped along with it. */}
+        <div className="flex h-9 w-9 overflow-hidden rounded-md bg-white ring-1 ring-gold-500">
+          <div className="flex w-1/2 items-center justify-center border-r border-black/15">
+            {pick.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pick.logoUrl} alt="" className="h-4 w-4 object-contain" />
+            )}
+          </div>
+          <div className="flex w-1/2 items-center justify-center">
+            {pick.bonusLogoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pick.bonusLogoUrl} alt="" className="h-4 w-4 object-contain" />
+            )}
+          </div>
         </div>
-        <div className="flex w-1/2 items-center justify-center">
-          {pick.bonusLogoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={pick.bonusLogoUrl} alt="" className="h-4 w-4 object-contain" />
-          )}
-        </div>
-        <span className="absolute right-0 top-0 rounded-bl bg-gold-500 px-1 text-[8px] font-bold leading-tight text-app">
-          2
+
+        <span
+          title="Bonus week"
+          className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-yellow-400 text-[8px] leading-none text-yellow-900 shadow-sm"
+        >
+          ★
         </span>
       </div>
     );
@@ -74,9 +85,11 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
 export default function LockedPicksList({
   weekNumbers,
   entries,
+  totalActiveEntries,
 }: {
   weekNumbers: number[];
   entries: LockedEntry[];
+  totalActiveEntries: number;
 }) {
   const [query, setQuery] = useState("");
 
@@ -109,7 +122,7 @@ export default function LockedPicksList({
         <div className="overflow-hidden rounded-lg border border-edge bg-surface">
           <div className="flex">
             {/* Fixed entry-name column */}
-            <div className="flex-shrink-0 border-r border-edge" style={{ width: 136 }}>
+            <div className="flex-shrink-0 border-r border-edge" style={{ width: 152 }}>
               <div
                 className="flex items-end px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted"
                 style={{ height: HEAD_H }}
@@ -119,17 +132,29 @@ export default function LockedPicksList({
               {filtered.map((e, i) => (
                 <div
                   key={e.entryId}
-                  className={`flex flex-col justify-center px-3 ${rowShade(i)}`}
+                  className={`flex flex-col justify-center gap-0.5 px-3 ${rowShade(i)}`}
                   style={{ height: ROW_H }}
                 >
-                  <span className="truncate text-xs font-medium text-ink">{e.entryName}</span>
-                  <span
-                    className={
-                      e.eliminated ? "text-[10px] text-dead" : "text-[10px] text-alive"
-                    }
-                  >
-                    {e.eliminated ? "Eliminated" : "Alive"}
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-xs font-medium text-ink">{e.entryName}</span>
+                    <span
+                      title="Bonus picks finalized"
+                      className="shrink-0 rounded bg-app px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-muted"
+                    >
+                      {e.bonusFinalizedCount}/2
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 overflow-hidden text-[10px]">
+                    {e.ownerName && (
+                      <>
+                        <span className="truncate text-muted">{e.ownerName}</span>
+                        <span className="text-muted">&middot;</span>
+                      </>
+                    )}
+                    <span className={e.eliminated ? "text-dead" : "text-alive"}>
+                      {e.eliminated ? "Eliminated" : "Alive"}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -172,7 +197,17 @@ export default function LockedPicksList({
       )}
 
       <p className="mt-3 text-xs text-muted">
-        {filtered.length} {filtered.length === 1 ? "entry" : "entries"} shown.
+        {query.trim() ? (
+          <>
+            {filtered.length} match{filtered.length === 1 ? "" : "es"} &ldquo;{query}&rdquo;
+            {" "}(of {totalActiveEntries} total active entries).
+          </>
+        ) : (
+          <>
+            {totalActiveEntries} total active entries &middot; {entries.length} with a locked
+            pick shown.
+          </>
+        )}
       </p>
     </div>
   );

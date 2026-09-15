@@ -11,6 +11,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string }[] }[] 
       { href: "/admin/survivor/results", label: "Results" },
       { href: "/admin/survivor/entries", label: "Entries" },
       { href: "/admin/survivor/bonus", label: "Bonus Weeks" },
+      { href: "/admin/survivor/missing-picks", label: "Missing Picks" },
     ],
   },
   {
