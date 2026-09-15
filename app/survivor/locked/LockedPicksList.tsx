@@ -39,21 +39,27 @@ function PickBox({ pick, dim }: { pick?: LockedPick; dim: boolean }) {
     return (
       <div
         title={`${pick.shortName} + ${pick.bonusShortName ?? "?"} — bonus week (both had to win)`}
-        className={`relative flex h-9 w-9 overflow-hidden rounded-md bg-white ring-1 ring-gold-500 ${dimCls}`}
+        className={`relative flex h-9 w-9 ${dimCls}`}
       >
-        <div className="flex w-1/2 items-center justify-center border-r border-black/15">
-          {pick.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={pick.logoUrl} alt="" className="h-4 w-4 object-contain" />
-          )}
+        {/* Clips the split-logo halves only — the badge below is a sibling
+            outside this box so it can overlay past the card's edge instead
+            of getting clipped along with it. */}
+        <div className="flex h-9 w-9 overflow-hidden rounded-md bg-white ring-1 ring-gold-500">
+          <div className="flex w-1/2 items-center justify-center border-r border-black/15">
+            {pick.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pick.logoUrl} alt="" className="h-4 w-4 object-contain" />
+            )}
+          </div>
+          <div className="flex w-1/2 items-center justify-center">
+            {pick.bonusLogoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={pick.bonusLogoUrl} alt="" className="h-4 w-4 object-contain" />
+            )}
+          </div>
         </div>
-        <div className="flex w-1/2 items-center justify-center">
-          {pick.bonusLogoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={pick.bonusLogoUrl} alt="" className="h-4 w-4 object-contain" />
-          )}
-        </div>
-        <span className="absolute right-0 top-0 inline-flex items-center gap-0.5 rounded-full bg-yellow-400 px-1.5 py-0.5 text-xs font-bold text-yellow-900">
+
+        <span className="absolute -top-1.5 -right-1.5 inline-flex items-center gap-0.5 rounded-full bg-yellow-400 px-1.5 py-0.5 text-[10px] font-bold leading-none text-yellow-900 shadow-sm">
           ⭐ Bonus
         </span>
       </div>
