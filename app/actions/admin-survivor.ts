@@ -557,3 +557,49 @@ export async function deleteEntryAdmin(formData: FormData) {
   revalidatePath("/admin");
   redirect("/admin/survivor/entries?deleted=1");
 }
+
+// ---------------------------------------------------------------------------
+// Missing-picks fill-in (/admin/survivor/missing-picks)
+//
+// The page only ever offers entries with no existing pick for the selected
+// week, so unlike adminSetSurvivorPick above there's never an existing bonus
+// row to unwind first — this always creates a plain regular pick. Goes
+// through the same admin_set_survivor_pick RPC (bypasses the kickoff lock,
+// still enforces SEC-team/no-reuse/has-a-game via validate_survivor_pick()).
+
+export async function adminSetMissingSurvivorPick(formData: FormData) {
+  const { supabase, user } = await requireAdmin();
+
+  const entryId = formData.get("entryId") as string;
+  const scheduleId = formData.get("scheduleId") as string;
+  const teamId = formData.get("teamId") as string;
+  const backHref = `/admin/survivor/missing-picks?schedule_id=${scheduleId}`;
+
+  if (!entryId || !scheduleId || !teamId) {
+    redirect(`${backHref}&error=` + encodeURIComponent("Missing pick reference"));
+  }
+
+  const { error } = await supabase.rpc("admin_set_survivor_pick", {
+    p_entry_id: entryId,
+    p_schedule_id: scheduleId,
+    p_team_id: teamId,
+  });
+  if (error) {
+    redirect(`${backHref}&error=` + encodeURIComponent(error.message));
+  }
+
+  await logAdminAction(
+    supabase,
+    user.id,
+    "admin_set_survivor_pick",
+    "survivor_picks",
+    entryId,
+    { schedule_id: scheduleId },
+    { schedule_id: scheduleId, team_id: teamId, is_bonus_week: false },
+    "Survivor entries — missing pick filled in by admin"
+  );
+
+  revalidatePath("/admin/survivor/missing-picks");
+  revalidatePath("/admin/survivor/entries");
+  redirect(`${backHref}&saved=1`);
+}
