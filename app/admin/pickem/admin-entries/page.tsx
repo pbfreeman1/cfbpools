@@ -59,21 +59,32 @@ function resultBadge(result: string | null) {
 export default async function AdminPickemAdminEntriesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; deleted?: string }>;
+  searchParams: Promise<{ error?: string; deleted?: string; schedule_id?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
 
-  const { data: activeEmailRows } = await supabase
-    .from("pickem_admin_emails")
-    .select("email")
-    .eq("active", true);
+  const [{ data: activeEmailRows }, { data: appSettings }, { data: allWeeks }] = await Promise.all([
+    supabase.from("pickem_admin_emails").select("email").eq("active", true),
+    supabase.from("app_settings").select("current_week_id").single(),
+    supabase
+      .from("schedule")
+      .select("id, season, week_number, label")
+      .order("season", { ascending: false })
+      .order("week_number", { ascending: false }),
+  ]);
 
   // Same match rule as prepare_pickem_entry(): lower(email) equality against
   // the active exclusion list — not is_ecount_eligible, since that flag also
   // factors in rownum exclusions (a separate, unrelated exclusion mechanism)
   // and is frozen at insert time rather than recomputed live.
   const excludedEmails = new Set((activeEmailRows ?? []).map((r) => r.email.toLowerCase()));
+  const weekById = new Map((allWeeks ?? []).map((w) => [w.id, w]));
+
+  // "all" shows every week (the original cross-week view); an explicit
+  // ?schedule_id= wins, otherwise default to the current week rather than
+  // dumping every excluded entry from the whole season on first load.
+  const selectedWeek = params.schedule_id || appSettings?.current_week_id || "all";
 
   if (excludedEmails.size === 0) {
     return (
@@ -94,17 +105,15 @@ export default async function AdminPickemAdminEntriesPage({
     `id, entry_name, entrant_email, schedule_id, rownum, created_at,
      user:profiles!pickem_entries_user_id_fkey(first_name, last_name, email)`
   );
-  const entries = ((allEntries ?? []) as unknown as EntryRow[]).filter((e) =>
-    excludedEmails.has(e.entrant_email.toLowerCase())
+  const entries = ((allEntries ?? []) as unknown as EntryRow[]).filter(
+    (e) =>
+      excludedEmails.has(e.entrant_email.toLowerCase()) &&
+      (selectedWeek === "all" || e.schedule_id === selectedWeek)
   );
 
-  const scheduleIds = [...new Set(entries.map((e) => e.schedule_id))];
   const entryIds = entries.map((e) => e.id);
 
-  const [{ data: weeksData }, { data: recordRows }, { data: pickRows }] = await Promise.all([
-    scheduleIds.length
-      ? supabase.from("schedule").select("id, season, week_number, label").in("id", scheduleIds)
-      : Promise.resolve({ data: [] as { id: string; season: number; week_number: number; label: string | null }[] }),
+  const [{ data: recordRows }, { data: pickRows }] = await Promise.all([
     entryIds.length
       ? supabase
           .from("pickem_entry_records")
@@ -119,7 +128,6 @@ export default async function AdminPickemAdminEntriesPage({
       : Promise.resolve({ data: [] as PickRow[] }),
   ]);
 
-  const weekById = new Map((weeksData ?? []).map((w) => [w.id, w]));
   const recordByEntry = new Map((recordRows ?? []).map((r) => [r.entry_id, r]));
 
   const gameIds = [...new Set((pickRows ?? []).map((p) => p.game_id))];
@@ -162,10 +170,38 @@ export default async function AdminPickemAdminEntriesPage({
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader />
-      <p className="mb-6 text-sm text-muted">
+      <p className="mb-4 text-sm text-muted">
         {entries.length} {entries.length === 1 ? "entry" : "entries"} across{" "}
-        {entriesByEmail.size} excluded {entriesByEmail.size === 1 ? "address" : "addresses"}.
+        {entriesByEmail.size} excluded {entriesByEmail.size === 1 ? "address" : "addresses"}
+        {selectedWeek !== "all" && weekById.get(selectedWeek)
+          ? ` — Week ${weekById.get(selectedWeek)!.week_number}${
+              weekById.get(selectedWeek)!.label ? ` (${weekById.get(selectedWeek)!.label})` : ""
+            }`
+          : " — all weeks"}
+        .
       </p>
+
+      <form action={SELF_PATH} method="GET" className="mb-6 flex flex-wrap items-center gap-2">
+        <select
+          name="schedule_id"
+          defaultValue={selectedWeek}
+          className="rounded-md border border-edge bg-app px-3 py-1.5 text-sm text-ink"
+        >
+          <option value="all">All weeks</option>
+          {(allWeeks ?? []).map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.season} — Week {w.week_number}
+              {w.id === appSettings?.current_week_id ? " (current)" : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
+        >
+          Go
+        </button>
+      </form>
 
       {params.error && (
         <p className="mb-4 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{params.error}</p>
@@ -175,7 +211,7 @@ export default async function AdminPickemAdminEntriesPage({
       )}
 
       {entries.length === 0 ? (
-        <p className="text-sm text-muted">No entries from an excluded email yet.</p>
+        <p className="text-sm text-muted">No entries from an excluded email for this filter.</p>
       ) : (
         <div className="flex flex-col gap-8">
           {[...entriesByEmail.entries()].map(([email, entryGroup]) => {
@@ -224,7 +260,7 @@ export default async function AdminPickemAdminEntriesPage({
                             <DeletePickemEntryButton
                               entryId={entry.id}
                               label={entry.entry_name}
-                              redirectTo={SELF_PATH}
+                              redirectTo={`${SELF_PATH}?schedule_id=${selectedWeek}`}
                             />
                           </div>
                         </div>
