@@ -20,6 +20,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string }[] }[] 
       { href: "/admin/pickem", label: "Overview" },
       { href: "/admin/pickem/week", label: "Week Setup" },
       { href: "/admin/pickem/entries", label: "Entries" },
+      { href: "/admin/pickem/admin-entries", label: "Admin Entries" },
       { href: "/admin/pickem/exclusions", label: "Exclusions" },
     ],
   },

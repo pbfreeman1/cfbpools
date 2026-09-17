@@ -225,6 +225,12 @@ export default async function AdminPickemOverviewPage() {
           Entries
         </Link>
         <Link
+          href="/admin/pickem/admin-entries"
+          className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
+        >
+          Admin Entries
+        </Link>
+        <Link
           href="/admin/pickem/exclusions"
           className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover"
         >
