@@ -56,8 +56,15 @@ export async function deletePickemEntryAdmin(formData: FormData) {
   const { supabase, user } = await requireAdmin();
 
   const entryId = formData.get("entryId") as string;
+  // Optional caller-supplied return path (e.g. the Admin Entries cross-week
+  // view) — restricted to our own /admin/pickem/* routes so this can't be
+  // used as an open redirect. Falls back to the plain Entries list, same as
+  // before this option existed.
+  const requestedRedirect = (formData.get("redirectTo") as string) || "";
+  const listPath = requestedRedirect.startsWith("/admin/pickem/") ? requestedRedirect : LIST_PATH;
+
   if (!entryId) {
-    redirect(`${LIST_PATH}?error=` + encodeURIComponent("Missing entry reference"));
+    redirect(`${listPath}?error=` + encodeURIComponent("Missing entry reference"));
   }
 
   const [{ data: entry }, { data: picks }] = await Promise.all([
@@ -65,7 +72,7 @@ export async function deletePickemEntryAdmin(formData: FormData) {
     supabase.from("pickem_picks").select("*").eq("entry_id", entryId),
   ]);
   if (!entry) {
-    redirect(`${LIST_PATH}?error=` + encodeURIComponent("Entry not found"));
+    redirect(`${listPath}?error=` + encodeURIComponent("Entry not found"));
   }
 
   // pickem_picks_entry_id_fkey is ON DELETE CASCADE — deleting the entry
@@ -73,7 +80,7 @@ export async function deletePickemEntryAdmin(formData: FormData) {
   // before that happens.
   const { error } = await supabase.from("pickem_entries").delete().eq("id", entryId);
   if (error) {
-    redirect(`${LIST_PATH}?error=` + encodeURIComponent(error.message));
+    redirect(`${listPath}?error=` + encodeURIComponent(error.message));
   }
 
   await logAdminAction(
@@ -88,7 +95,8 @@ export async function deletePickemEntryAdmin(formData: FormData) {
   );
 
   revalidatePath(LIST_PATH);
-  redirect(`${LIST_PATH}?deleted=1`);
+  revalidatePath(listPath);
+  redirect(`${listPath}?deleted=1`);
 }
 
 // Admin override for a single pick. validate_pickem_pick() (the DB trigger

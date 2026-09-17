@@ -5,9 +5,11 @@ import { deletePickemEntryAdmin } from "@/app/actions/admin-pickem-entries";
 export default function DeletePickemEntryButton({
   entryId,
   label,
+  redirectTo,
 }: {
   entryId: string;
   label: string;
+  redirectTo?: string;
 }) {
   return (
     <form
@@ -19,6 +21,7 @@ export default function DeletePickemEntryButton({
       }}
     >
       <input type="hidden" name="entryId" value={entryId} />
+      {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
       <button type="submit" className="text-xs font-medium text-dead hover:underline">
         Delete
       </button>
