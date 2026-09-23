@@ -4,6 +4,7 @@ import { computeEliminations, buildTeamResultMap, type SurvivorPick, type GameRe
 import { commitWeekResults, reinstateEntry } from "@/app/actions/admin-survivor";
 import { getMatchupPrefix } from "@/app/components/MatchupLine";
 import { formatKickoff } from "@/lib/formatDate";
+import { isSecConference } from "@/lib/teams/classification";
 
 type TeamRef = {
   id: string;
@@ -11,6 +12,7 @@ type TeamRef = {
   short_name: string | null;
   logo_url: string | null;
   primary_color: string | null;
+  conference: string | null;
 };
 
 type GameRow = {
@@ -79,8 +81,8 @@ export default async function AdminSurvivorResultsPage({
     .from("games")
     .select(
       `id, kickoff_time, status, home_score, away_score,
-       home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url, primary_color),
-       away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url, primary_color)`
+       home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url, primary_color, conference),
+       away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url, primary_color, conference)`
     )
     .eq("schedule_id", scheduleId)
     .order("kickoff_time");
@@ -105,6 +107,12 @@ export default async function AdminSurvivorResultsPage({
     awayTeamId: g.away_team.id,
   }));
   const teamResult = buildTeamResultMap(gameResults, overrideWinnerByGameId);
+
+  // Display-only filter — grading/elimination above uses the full `games`
+  // list untouched. SEC-vs-SEC games appear once (OR, not counted twice).
+  const secGames = games.filter(
+    (g) => isSecConference(g.home_team.conference) || isSecConference(g.away_team.conference)
+  );
 
   const { data: pickRows } = await supabase
     .from("survivor_picks")
@@ -232,10 +240,10 @@ export default async function AdminSurvivorResultsPage({
         <form action="/admin/survivor/results" method="GET" className="mb-10">
           <input type="hidden" name="preview" value="1" />
           <div className="mb-4 divide-y divide-edge rounded-lg border border-edge bg-surface">
-            {games.length === 0 && (
-              <p className="px-4 py-3 text-sm text-muted">No games scheduled for this week.</p>
+            {secGames.length === 0 && (
+              <p className="px-4 py-3 text-sm text-muted">No SEC games this week.</p>
             )}
-            {games.map((g) => {
+            {secGames.map((g) => {
               const isFinal = g.status === "final" && g.home_score !== null && g.away_score !== null;
               const homeWon = isFinal && (g.home_score as number) > (g.away_score as number);
               return (
