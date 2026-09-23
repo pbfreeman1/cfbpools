@@ -4,6 +4,7 @@ import { updatePickemGame, clearPickemSpreadOverride, bulkSetPickemSelection } f
 import { triggerSync } from "@/app/actions/admin-system";
 import { GameMatchupLine } from "@/app/components/MatchupLine";
 import { formatKickoff } from "@/lib/formatDate";
+import { isFbsConference } from "@/lib/teams/classification";
 import CheckboxBulkToggle from "./CheckboxBulkToggle";
 
 const BULK_FORM_ID = "pickem-bulk-select-form";
@@ -13,6 +14,7 @@ type TeamRef = {
   school_name: string;
   short_name: string | null;
   logo_url: string | null;
+  conference: string | null;
 };
 
 type GameRow = {
@@ -62,8 +64,8 @@ export default async function AdminPickemWeekPage({
         .from("games")
         .select(
           `id, kickoff_time, status, home_spread, pickem_spread_override, pickem_selected,
-           home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url),
-           away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url)`
+           home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name, logo_url, conference),
+           away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name, logo_url, conference)`
         )
         .eq("schedule_id", scheduleId)
         .order("kickoff_time"),
@@ -73,6 +75,15 @@ export default async function AdminPickemWeekPage({
   }
 
   const selectedCount = games.filter((g) => g.pickem_selected).length;
+
+  // Display-only filter: FBS-vs-FBS games, plus any already-selected game
+  // regardless of classification (never auto-deselected, just badged).
+  const isFbsMatchup = (g: GameRow) =>
+    isFbsConference(g.home_team.conference) && isFbsConference(g.away_team.conference);
+  const visibleGames = games.filter((g) => isFbsMatchup(g) || g.pickem_selected);
+  // Unconfigured week (nothing selected yet) → every visible checkbox
+  // starts checked. Otherwise reflect saved state exactly.
+  const isUnconfiguredWeek = selectedCount === 0;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -194,11 +205,12 @@ export default async function AdminPickemWeekPage({
           </div>
 
           <div className="divide-y divide-edge rounded-lg border border-edge bg-surface">
-            {games.length === 0 && (
+            {visibleGames.length === 0 && (
               <p className="px-4 py-3 text-sm text-muted">No games scheduled for this week.</p>
             )}
-            {games.map((g) => {
+            {visibleGames.map((g) => {
               const hasOverride = g.pickem_spread_override !== null;
+              const isOffPolicy = !isFbsMatchup(g);
               // Added games show the locked, frozen truth; not-yet-added
               // games preview the live CFBD value that submitting would lock.
               const spreadDefaultValue = g.pickem_selected
@@ -228,10 +240,18 @@ export default async function AdminPickemWeekPage({
                           name="gameIds"
                           value={g.id}
                           form={BULK_FORM_ID}
-                          defaultChecked
+                          defaultChecked={isUnconfiguredWeek ? true : g.pickem_selected}
                           className="accent-gold-500"
                         />
                         <span className="text-xs font-medium uppercase text-muted">Include</span>
+                        {isOffPolicy && (
+                          <span
+                            title="Not an FBS-vs-FBS matchup"
+                            className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted"
+                          >
+                            FCS
+                          </span>
+                        )}
                       </label>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
