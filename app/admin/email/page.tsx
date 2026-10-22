@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { formatKickoff } from "@/lib/formatDate";
 import { sendTestEmail } from "@/app/actions/admin-email";
 import {
+  copyAllUserEmails,
+  copyAllPickemEntrantEmails,
   copyPickemEntrantEmails,
   copyAliveSurvivorEmails,
   copyAliveSurvivorNoPickEmails,
@@ -153,6 +155,11 @@ export default async function AdminEmailPage({
           Copies a comma-separated, deduped address list to the clipboard.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <CopyEmailsButton label="All registered users" action={copyAllUserEmails} />
+          <CopyEmailsButton
+            label="Pick'em entrants — any week"
+            action={copyAllPickemEntrantEmails}
+          />
           <CopyEmailsButton label="Current-week Pick'em entrants" action={copyPickemEntrantEmails} />
           <CopyEmailsButton label="Alive Survivor entries" action={copyAliveSurvivorEmails} />
           <CopyEmailsButton

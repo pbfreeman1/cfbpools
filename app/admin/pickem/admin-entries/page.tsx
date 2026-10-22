@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatKickoff } from "@/lib/formatDate";
+import { fetchAll } from "@/lib/supabase/fetchAll";
 import DeletePickemEntryButton from "../entries/DeletePickemEntryButton";
 
 const SELF_PATH = "/admin/pickem/admin-entries";
@@ -90,13 +91,20 @@ export default async function AdminPickemAdminEntriesPage({
     );
   }
 
-  const { data: allEntries } = await supabase.from("pickem_entries").select(
-    `id, entry_name, entrant_email, schedule_id, rownum, created_at,
-     user:profiles!pickem_entries_user_id_fkey(first_name, last_name, email)`
+  // Paged: pickem_entries is already past PostgREST's silent 1,000-row cap,
+  // and this page filters by email in JS — an unpaged select would quietly
+  // drop excluded entries that fell beyond the first 1,000 rows.
+  const allEntries = await fetchAll<EntryRow>((from, to) =>
+    supabase
+      .from("pickem_entries")
+      .select(
+        `id, entry_name, entrant_email, schedule_id, rownum, created_at,
+         user:profiles!pickem_entries_user_id_fkey(first_name, last_name, email)`
+      )
+      .order("id")
+      .range(from, to)
   );
-  const entries = ((allEntries ?? []) as unknown as EntryRow[]).filter((e) =>
-    excludedEmails.has(e.entrant_email.toLowerCase())
-  );
+  const entries = allEntries.filter((e) => excludedEmails.has(e.entrant_email.toLowerCase()));
 
   const scheduleIds = [...new Set(entries.map((e) => e.schedule_id))];
   const entryIds = entries.map((e) => e.id);
@@ -142,29 +150,48 @@ export default async function AdminPickemAdminEntriesPage({
     picksByEntry.set(p.entry_id, arr);
   });
 
-  // Group by entrant email, then sort each entrant's entries newest-week-first.
-  const entriesByEmail = new Map<string, EntryRow[]>();
+  // Group by week first (newest season/week at the top), then by entrant
+  // email within each week, then entry name — so one week's excluded
+  // entries read together instead of being scattered per person.
+  const entriesByWeek = new Map<string, EntryRow[]>();
   entries.forEach((e) => {
-    const key = e.entrant_email.toLowerCase();
-    const arr = entriesByEmail.get(key) ?? [];
+    const arr = entriesByWeek.get(e.schedule_id) ?? [];
     arr.push(e);
-    entriesByEmail.set(key, arr);
+    entriesByWeek.set(e.schedule_id, arr);
   });
-  entriesByEmail.forEach((arr) =>
-    arr.sort((a, b) => {
-      const wa = weekById.get(a.schedule_id);
-      const wb = weekById.get(b.schedule_id);
-      if (!wa || !wb) return 0;
-      return wb.season - wa.season || wb.week_number - wa.week_number;
+
+  const weekGroups = [...entriesByWeek.entries()]
+    .map(([scheduleId, group]) => {
+      const byEmail = new Map<string, EntryRow[]>();
+      [...group]
+        .sort(
+          (a, b) =>
+            a.entrant_email.toLowerCase().localeCompare(b.entrant_email.toLowerCase()) ||
+            a.entry_name.localeCompare(b.entry_name, "en", { sensitivity: "base" })
+        )
+        .forEach((e) => {
+          const key = e.entrant_email.toLowerCase();
+          const arr = byEmail.get(key) ?? [];
+          arr.push(e);
+          byEmail.set(key, arr);
+        });
+      return { scheduleId, week: weekById.get(scheduleId), emailGroups: [...byEmail.entries()], count: group.length };
     })
-  );
+    .sort(
+      (a, b) =>
+        (b.week?.season ?? 0) - (a.week?.season ?? 0) ||
+        (b.week?.week_number ?? 0) - (a.week?.week_number ?? 0)
+    );
+
+  const distinctEmails = new Set(entries.map((e) => e.entrant_email.toLowerCase())).size;
 
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader />
       <p className="mb-6 text-sm text-muted">
-        {entries.length} {entries.length === 1 ? "entry" : "entries"} across{" "}
-        {entriesByEmail.size} excluded {entriesByEmail.size === 1 ? "address" : "addresses"}.
+        {entries.length} {entries.length === 1 ? "entry" : "entries"} across {distinctEmails}{" "}
+        excluded {distinctEmails === 1 ? "address" : "addresses"} in {weekGroups.length}{" "}
+        {weekGroups.length === 1 ? "week" : "weeks"}.
       </p>
 
       {params.error && (
@@ -177,103 +204,118 @@ export default async function AdminPickemAdminEntriesPage({
       {entries.length === 0 ? (
         <p className="text-sm text-muted">No entries from an excluded email yet.</p>
       ) : (
-        <div className="flex flex-col gap-8">
-          {[...entriesByEmail.entries()].map(([email, entryGroup]) => {
-            const owner = entryGroup[0]?.user;
-            const ownerName = [owner?.first_name, owner?.last_name].filter(Boolean).join(" ");
-            return (
-              <section key={email}>
-                <h2 className="mb-3 font-display text-base font-semibold uppercase tracking-wide text-gold-400">
-                  {email}
-                  {ownerName && <span className="ml-2 text-xs font-normal text-muted">({ownerName})</span>}
-                </h2>
-                <div className="flex flex-col gap-3">
-                  {entryGroup.map((entry) => {
-                    const week = weekById.get(entry.schedule_id);
-                    const record = recordByEntry.get(entry.id);
-                    const picks = picksByEntry.get(entry.id) ?? [];
-                    return (
-                      <div key={entry.id} className="rounded-lg border border-edge bg-surface p-4">
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-ink">
-                              {entry.entry_name}{" "}
-                              <span className="font-normal text-muted">
-                                — Week {week?.week_number ?? "?"}
-                                {week?.label ? ` (${week.label})` : ""}
-                              </span>
-                            </p>
-                            <p className="text-xs text-muted">
-                              Row #{entry.rownum ?? "—"} — Entered {formatKickoff(entry.created_at)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            {record && (
-                              <span className="font-data text-xs text-muted">
-                                {record.wins}-{record.effective_losses}
-                                {record.pushes > 0 ? ` (${record.pushes} push)` : ""}
-                                {record.pending > 0 ? ` — ${record.pending} pending` : ""}
-                              </span>
-                            )}
-                            <Link
-                              href={`/admin/pickem/entries/${entry.id}?schedule_id=${entry.schedule_id}`}
-                              className="text-xs font-medium text-gold-400 hover:underline"
-                            >
-                              Edit picks
-                            </Link>
-                            <DeletePickemEntryButton
-                              entryId={entry.id}
-                              label={entry.entry_name}
-                              redirectTo={SELF_PATH}
-                            />
-                          </div>
-                        </div>
+        <div className="flex flex-col gap-10">
+          {weekGroups.map(({ scheduleId, week, emailGroups, count }) => (
+            <section key={scheduleId}>
+              <h2 className="mb-4 flex items-baseline justify-between border-b border-edge pb-2 font-display text-lg font-bold uppercase tracking-wide text-gold-400">
+                <span>
+                  Week {week?.week_number ?? "?"}
+                  {week?.label ? (
+                    <span className="ml-2 text-sm font-normal normal-case text-muted">
+                      {week.label}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="font-data text-xs font-normal normal-case text-muted">
+                  {count} {count === 1 ? "entry" : "entries"}
+                </span>
+              </h2>
 
-                        {picks.length === 0 ? (
-                          <p className="text-xs text-muted">No picks made.</p>
-                        ) : (
-                          <ul className="divide-y divide-edge">
-                            {picks.map((p) => {
-                              const game = gameById.get(p.game_id);
-                              const pickedTeamName = game
-                                ? p.team_id === game.home_team.id
-                                  ? game.home_team.short_name || game.home_team.school_name
-                                  : p.team_id === game.away_team.id
-                                    ? game.away_team.short_name || game.away_team.school_name
-                                    : "Unknown team"
-                                : "Unknown team";
-                              const matchup = game
-                                ? `${game.away_team.short_name || game.away_team.school_name} @ ${
-                                    game.home_team.short_name || game.home_team.school_name
-                                  }`
-                                : "Unknown game";
-                              const badge = resultBadge(p.result);
-                              return (
-                                <li
-                                  key={p.id}
-                                  className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm"
-                                >
-                                  <span className="text-muted">{matchup}</span>
-                                  <span className="flex items-center gap-2">
-                                    <span className="font-medium text-ink">{pickedTeamName}</span>
-                                    <span
-                                      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}
-                                    >
-                                      {badge.label}
-                                    </span>
-                                  </span>
-                                </li>
-                              );
-                            })}
-                          </ul>
+              <div className="flex flex-col gap-6">
+                {emailGroups.map(([email, entryGroup]) => {
+                  const owner = entryGroup[0]?.user;
+                  const ownerName = [owner?.first_name, owner?.last_name].filter(Boolean).join(" ");
+                  return (
+                    <div key={`${scheduleId}-${email}`}>
+                      <h3 className="mb-2 text-sm font-semibold text-ink">
+                        {email}
+                        {ownerName && (
+                          <span className="ml-2 text-xs font-normal text-muted">({ownerName})</span>
                         )}
+                      </h3>
+                      <div className="flex flex-col gap-3">
+                        {entryGroup.map((entry) => {
+                          const record = recordByEntry.get(entry.id);
+                          const picks = picksByEntry.get(entry.id) ?? [];
+                          return (
+                            <div key={entry.id} className="rounded-lg border border-edge bg-surface p-4">
+                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-ink">{entry.entry_name}</p>
+                                  <p className="text-xs text-muted">
+                                    Row #{entry.rownum ?? "—"} — Entered {formatKickoff(entry.created_at)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  {record && (
+                                    <span className="font-data text-xs text-muted">
+                                      {record.wins}-{record.effective_losses}
+                                      {record.pushes > 0 ? ` (${record.pushes} push)` : ""}
+                                      {record.pending > 0 ? ` — ${record.pending} pending` : ""}
+                                    </span>
+                                  )}
+                                  <Link
+                                    href={`/admin/pickem/entries/${entry.id}?schedule_id=${entry.schedule_id}`}
+                                    className="text-xs font-medium text-gold-400 hover:underline"
+                                  >
+                                    Edit picks
+                                  </Link>
+                                  <DeletePickemEntryButton
+                                    entryId={entry.id}
+                                    label={entry.entry_name}
+                                    redirectTo={SELF_PATH}
+                                  />
+                                </div>
+                              </div>
+
+                              {picks.length === 0 ? (
+                                <p className="text-xs text-muted">No picks made.</p>
+                              ) : (
+                                <ul className="divide-y divide-edge">
+                                  {picks.map((p) => {
+                                    const game = gameById.get(p.game_id);
+                                    const pickedTeamName = game
+                                      ? p.team_id === game.home_team.id
+                                        ? game.home_team.short_name || game.home_team.school_name
+                                        : p.team_id === game.away_team.id
+                                          ? game.away_team.short_name || game.away_team.school_name
+                                          : "Unknown team"
+                                      : "Unknown team";
+                                    const matchup = game
+                                      ? `${game.away_team.short_name || game.away_team.school_name} @ ${
+                                          game.home_team.short_name || game.home_team.school_name
+                                        }`
+                                      : "Unknown game";
+                                    const badge = resultBadge(p.result);
+                                    return (
+                                      <li
+                                        key={p.id}
+                                        className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm"
+                                      >
+                                        <span className="text-muted">{matchup}</span>
+                                        <span className="flex items-center gap-2">
+                                          <span className="font-medium text-ink">{pickedTeamName}</span>
+                                          <span
+                                            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}
+                                          >
+                                            {badge.label}
+                                          </span>
+                                        </span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
     </div>
