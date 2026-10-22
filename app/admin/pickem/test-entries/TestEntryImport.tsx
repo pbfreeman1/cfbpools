@@ -12,6 +12,10 @@ import {
 // client-side as well so an oversized file fails before a round trip.
 const MAX_ROWS = 200;
 
+// A Pick'em entry is always 6 picks, so the CSV shape is fixed at
+// pick_1…pick_6 regardless of how many games are selected for the week.
+const PICK_COLUMNS = 6;
+
 export type ImportGame = {
   id: string;
   homeName: string;
@@ -37,7 +41,9 @@ export default function TestEntryImport({
   // Problems found before the RPC is ever called (unreadable file, wrong
   // header, too many rows) — kept separate from the RPC's per-row errors.
   const [parseError, setParseError] = useState<string | null>(null);
-  const [rpcErrors, setRpcErrors] = useState<PickemTestImportError[] | null>(null);
+  // Per-row problems, from either side: the pick-count check done here on
+  // parse, or the import RPC's own validation. Both render in one table.
+  const [rowErrors, setRowErrors] = useState<PickemTestImportError[] | null>(null);
   const [rpcMessage, setRpcMessage] = useState<string | null>(null);
   // Set once a dry run comes back clean — gates the Confirm button, and is
   // cleared by any new file selection so a stale clean run can't authorize a
@@ -46,24 +52,26 @@ export default function TestEntryImport({
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
-  const pickCount = games.length;
-
   const reset = () => {
     setParsed(null);
     setParseError(null);
-    setRpcErrors(null);
+    setRowErrors(null);
     setRpcMessage(null);
     setDryRunOk(null);
     setDone(null);
   };
 
   const downloadTemplate = () => {
-    const header = ["entry_name", ...games.map((_, i) => `pick_${i + 1}`)];
-    // One illustrative row per side of the slate so the admin can see both
-    // what a valid pick looks like and that any team from each game works.
+    const header = ["entry_name", ...Array.from({ length: PICK_COLUMNS }, (_, i) => `pick_${i + 1}`)];
+    // Always 6 example picks, drawn from this week's selected games — cycled
+    // if the slate has fewer than 6 games so the template still shows real
+    // team names in every column. One row per side of each matchup, so the
+    // admin can see that either team is a valid value.
+    const example = (pick: (g: ImportGame) => string) =>
+      Array.from({ length: PICK_COLUMNS }, (_, i) => pick(games[i % games.length]));
     const rows = [
-      ["Test Entry 1", ...games.map((g) => g.awayName)],
-      ["Test Entry 2", ...games.map((g) => g.homeName)],
+      ["Test Entry 1", ...example((g) => g.awayName)],
+      ["Test Entry 2", ...example((g) => g.homeName)],
     ];
     const blob = new Blob([toCsv(header, rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -98,16 +106,6 @@ export default function TestEntryImport({
       return;
     }
 
-    // Accept pick_1..pick_N in the header in any order/spelling as long as
-    // each of the week's games has a column; the import RPC matches picks to
-    // games by team name, not by column position, so only the count matters.
-    const pickCols = header.filter((h) => /^pick_\d+$/.test(h));
-    if (pickCols.length !== pickCount) {
-      setParseError(
-        `This week has ${pickCount} selected game${pickCount === 1 ? "" : "s"}, so the file needs ${pickCount} pick column${pickCount === 1 ? "" : "s"} (pick_1…pick_${pickCount}) — found ${pickCols.length}.`
-      );
-      return;
-    }
     if (rows.length === 0) {
       setParseError("That file has a header row but no entries.");
       return;
@@ -117,30 +115,48 @@ export default function TestEntryImport({
       return;
     }
 
+    // Every pick_N column in the header is read, in header order — the
+    // import RPC matches picks to games by team name, not by column
+    // position, so the only thing that matters is landing on exactly 6
+    // non-empty picks. Blank cells are dropped rather than sent as empty
+    // strings, which is what makes a short row fail the count below.
     const pickIdx = header
       .map((h, i) => (/^pick_\d+$/.test(h) ? i : -1))
       .filter((i) => i >= 0);
     const nameIdx = header.indexOf("entry_name");
 
-    setParsed(
-      rows.map((r) => ({
-        entry_name: (r[nameIdx] ?? "").trim(),
-        picks: pickIdx.map((i) => (r[i] ?? "").trim()),
-      }))
-    );
+    const candidates: ParsedRow[] = rows.map((r) => ({
+      entry_name: (r[nameIdx] ?? "").trim(),
+      picks: pickIdx.map((i) => (r[i] ?? "").trim()).filter((v) => v !== ""),
+    }));
+
+    const countErrors: PickemTestImportError[] = candidates
+      .map((row, i) =>
+        row.picks.length === PICK_COLUMNS
+          ? null
+          : { row: i + 1, entry_name: row.entry_name, error: `Expected exactly ${PICK_COLUMNS} picks` }
+      )
+      .filter((e): e is PickemTestImportError => e !== null);
+
+    if (countErrors.length > 0) {
+      setRowErrors(countErrors);
+      return;
+    }
+
+    setParsed(candidates);
   };
 
   const runDryRun = async () => {
     if (!parsed) return;
     setBusy(true);
-    setRpcErrors(null);
+    setRowErrors(null);
     setRpcMessage(null);
     setDryRunOk(null);
     const res = await importPickemTestEntries(scheduleId, parsed, true);
     setBusy(false);
 
     if (!res.ok) {
-      if (res.errors?.length) setRpcErrors(res.errors);
+      if (res.errors?.length) setRowErrors(res.errors);
       else setRpcMessage(res.message ?? "Validation failed.");
       return;
     }
@@ -150,13 +166,13 @@ export default function TestEntryImport({
   const runImport = async () => {
     if (!parsed || dryRunOk === null) return;
     setBusy(true);
-    setRpcErrors(null);
+    setRowErrors(null);
     setRpcMessage(null);
     const res = await importPickemTestEntries(scheduleId, parsed, false);
     setBusy(false);
 
     if (!res.ok) {
-      if (res.errors?.length) setRpcErrors(res.errors);
+      if (res.errors?.length) setRowErrors(res.errors);
       else setRpcMessage(res.message ?? "Import failed.");
       setDryRunOk(null);
       return;
@@ -182,9 +198,10 @@ export default function TestEntryImport({
       <p className="mb-3 text-xs text-muted">
         CSV with a header row: <span className="font-data">entry_name</span>, then{" "}
         <span className="font-data">pick_1</span>…
-        <span className="font-data">pick_{pickCount}</span> — one team name (full or short) per
-        selected game, in any order. Max {MAX_ROWS} rows. Test entries never count toward eCount or
-        shift row numbers, and have no email address.
+        <span className="font-data">pick_{PICK_COLUMNS}</span> — exactly {PICK_COLUMNS} team names
+        (full or short) per row, drawn from this week&apos;s selected games, in any order. Max{" "}
+        {MAX_ROWS} rows. Test entries never count toward eCount or shift row numbers, and have no
+        email address.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -201,7 +218,7 @@ export default function TestEntryImport({
         <button
           type="button"
           onClick={downloadTemplate}
-          disabled={pickCount === 0}
+          disabled={games.length === 0}
           className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Download template
@@ -217,10 +234,10 @@ export default function TestEntryImport({
         <p className="mb-3 rounded-md bg-dead/10 px-3 py-2 text-sm text-dead">{rpcMessage}</p>
       )}
 
-      {rpcErrors && rpcErrors.length > 0 && (
+      {rowErrors && rowErrors.length > 0 && (
         <div className="mb-3">
           <p className="mb-2 text-sm font-medium text-dead">
-            {rpcErrors.length} row{rpcErrors.length === 1 ? "" : "s"} rejected — nothing was
+            {rowErrors.length} row{rowErrors.length === 1 ? "" : "s"} rejected — nothing was
             imported. Fix the file and upload again.
           </p>
           <div className="divide-y divide-edge overflow-hidden rounded-md border border-dead/40">
@@ -229,7 +246,7 @@ export default function TestEntryImport({
               <span>Entry name</span>
               <span>Problem</span>
             </div>
-            {rpcErrors.map((e, i) => (
+            {rowErrors.map((e, i) => (
               <div
                 key={`${e.row}-${i}`}
                 className="grid grid-cols-[4rem_1fr_2fr] gap-2 px-3 py-1.5 text-sm"
@@ -294,7 +311,7 @@ export default function TestEntryImport({
                 <tr className="bg-app text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="px-3 py-1.5 text-left">#</th>
                   <th className="px-3 py-1.5 text-left">Entry name</th>
-                  {Array.from({ length: pickCount }, (_, i) => (
+                  {Array.from({ length: PICK_COLUMNS }, (_, i) => (
                     <th key={i} className="px-3 py-1.5 text-left">
                       Pick {i + 1}
                     </th>
@@ -306,7 +323,7 @@ export default function TestEntryImport({
                   <tr key={i}>
                     <td className="px-3 py-1.5 font-data text-xs text-muted">{i + 1}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-ink">{r.entry_name || "—"}</td>
-                    {Array.from({ length: pickCount }, (_, c) => (
+                    {Array.from({ length: PICK_COLUMNS }, (_, c) => (
                       <td key={c} className="whitespace-nowrap px-3 py-1.5 text-muted">
                         {r.picks[c] || "—"}
                       </td>
