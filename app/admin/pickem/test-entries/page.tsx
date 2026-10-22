@@ -11,6 +11,8 @@ type GameRow = {
   away_team_id: string;
   status: string;
   kickoff_time: string;
+  home_spread: number | null;
+  pickem_spread_override: number | null;
   home_team: TeamRef;
   away_team: TeamRef;
 };
@@ -90,7 +92,7 @@ export default async function AdminPickemTestEntriesPage({
     supabase
       .from("games")
       .select(
-        `id, home_team_id, away_team_id, status, kickoff_time,
+        `id, home_team_id, away_team_id, status, kickoff_time, home_spread, pickem_spread_override,
          home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name),
          away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name)`
       )
@@ -103,10 +105,14 @@ export default async function AdminPickemTestEntriesPage({
   const games = (gamesData ?? []) as unknown as GameRow[];
 
   // Only games still open for picks can seed the template — a template whose
-  // examples name a kicked-off game produces a file that can't be used as a
-  // real entry. Openness is evaluated here on the server (not in the client
-  // component) so "in the future" is one consistent instant and can't drift
-  // with a long-open tab or a clock skew between server and browser.
+  // examples name a kicked-off game, or one with no line yet, produces a file
+  // that can't be used as a real entry. Openness is evaluated here on the
+  // server (not in the client component) so "in the future" is one consistent
+  // instant and can't drift with a long-open tab or a clock skew between
+  // server and browser. The spread test uses the same
+  // `pickem_spread_override ?? home_spread` precedence as every other
+  // Pick'em surface — a 0 line (PK) is a real spread, so this is an explicit
+  // null check, not a falsy one.
   //
   // The import RPC matches CSV picks against school_name OR short_name, so
   // the template uses school_name — the unambiguous one. The records view's
@@ -114,7 +120,12 @@ export default async function AdminPickemTestEntriesPage({
   // every other admin pick editor.
   const now = Date.now();
   const openImportGames: ImportGame[] = games
-    .filter((g) => g.status === "scheduled" && new Date(g.kickoff_time).getTime() > now)
+    .filter(
+      (g) =>
+        g.status === "scheduled" &&
+        new Date(g.kickoff_time).getTime() > now &&
+        (g.pickem_spread_override ?? g.home_spread) !== null
+    )
     .map((g) => ({
       id: g.id,
       homeName: g.home_team.school_name,

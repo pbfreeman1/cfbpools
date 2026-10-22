@@ -31,10 +31,11 @@ export default function TestEntryImport({
 }: {
   scheduleId: string;
   weekLabel: string;
-  // This week's selected games that are still open for picks (scheduled,
-  // kickoff in the future) — filtered on the server. Only these can seed
-  // the template, since an example naming a kicked-off game would produce
-  // a file that isn't usable as a real entry.
+  // This week's selected games that are still open for picks — scheduled,
+  // kickoff in the future, and carrying a spread — filtered on the server.
+  // Only these can seed the template, since an example naming a kicked-off
+  // or spreadless game would produce a file that isn't usable as a real
+  // entry.
   openGames: ImportGame[];
 }) {
   const router = useRouter();
@@ -232,7 +233,9 @@ export default function TestEntryImport({
           Download template
         </button>
         {!canDownloadTemplate && (
-          <span className="text-xs text-muted">Fewer than 6 open Pick&apos;em games this week</span>
+          <span className="text-xs text-muted">
+            Fewer than 6 open Pick&apos;em games with spreads this week
+          </span>
         )}
       </div>
 
