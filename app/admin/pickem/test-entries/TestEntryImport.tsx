@@ -27,11 +27,15 @@ type ParsedRow = { entry_name: string; picks: string[] };
 export default function TestEntryImport({
   scheduleId,
   weekLabel,
-  games,
+  openGames,
 }: {
   scheduleId: string;
   weekLabel: string;
-  games: ImportGame[];
+  // This week's selected games that are still open for picks (scheduled,
+  // kickoff in the future) — filtered on the server. Only these can seed
+  // the template, since an example naming a kicked-off game would produce
+  // a file that isn't usable as a real entry.
+  openGames: ImportGame[];
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -61,17 +65,21 @@ export default function TestEntryImport({
     setDone(null);
   };
 
+  // A valid entry is 6 picks from 6 *different* games, so the template can
+  // only be generated when there are at least 6 open games to draw from —
+  // never by cycling or repeating a game, which would produce a file the
+  // import rejects ("Two picks from the same game").
+  const templateGames = openGames.slice(0, PICK_COLUMNS);
+  const canDownloadTemplate = templateGames.length === PICK_COLUMNS;
+
   const downloadTemplate = () => {
+    if (!canDownloadTemplate) return;
     const header = ["entry_name", ...Array.from({ length: PICK_COLUMNS }, (_, i) => `pick_${i + 1}`)];
-    // Always 6 example picks, drawn from this week's selected games — cycled
-    // if the slate has fewer than 6 games so the template still shows real
-    // team names in every column. One row per side of each matchup, so the
-    // admin can see that either team is a valid value.
-    const example = (pick: (g: ImportGame) => string) =>
-      Array.from({ length: PICK_COLUMNS }, (_, i) => pick(games[i % games.length]));
+    // One row per side of the six matchups, so the admin can see that either
+    // team in a game is a valid value.
     const rows = [
-      ["Test Entry 1", ...example((g) => g.awayName)],
-      ["Test Entry 2", ...example((g) => g.homeName)],
+      ["Test Entry 1", ...templateGames.map((g) => g.awayName)],
+      ["Test Entry 2", ...templateGames.map((g) => g.homeName)],
     ];
     const blob = new Blob([toCsv(header, rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -198,10 +206,10 @@ export default function TestEntryImport({
       <p className="mb-3 text-xs text-muted">
         CSV with a header row: <span className="font-data">entry_name</span>, then{" "}
         <span className="font-data">pick_1</span>…
-        <span className="font-data">pick_{PICK_COLUMNS}</span> — exactly {PICK_COLUMNS} team names
-        (full or short) per row, drawn from this week&apos;s selected games, in any order. Max{" "}
-        {MAX_ROWS} rows. Test entries never count toward eCount or shift row numbers, and have no
-        email address.
+        <span className="font-data">pick_{PICK_COLUMNS}</span> — one team name (full or short) per
+        column, in any order. 6 picks, any 6 different games that haven&apos;t kicked off, and each
+        game needs a spread. Max {MAX_ROWS} rows. Test entries never count toward eCount or shift
+        row numbers, and have no email address.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -218,11 +226,14 @@ export default function TestEntryImport({
         <button
           type="button"
           onClick={downloadTemplate}
-          disabled={games.length === 0}
+          disabled={!canDownloadTemplate}
           className="rounded-md border border-edge px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Download template
         </button>
+        {!canDownloadTemplate && (
+          <span className="text-xs text-muted">Fewer than 6 open Pick&apos;em games this week</span>
+        )}
       </div>
 
       {done && <p className="mb-3 rounded-md bg-alive/10 px-3 py-2 text-sm text-alive">{done}</p>}

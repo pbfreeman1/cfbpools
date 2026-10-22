@@ -9,6 +9,8 @@ type GameRow = {
   id: string;
   home_team_id: string;
   away_team_id: string;
+  status: string;
+  kickoff_time: string;
   home_team: TeamRef;
   away_team: TeamRef;
 };
@@ -88,7 +90,7 @@ export default async function AdminPickemTestEntriesPage({
     supabase
       .from("games")
       .select(
-        `id, home_team_id, away_team_id,
+        `id, home_team_id, away_team_id, status, kickoff_time,
          home_team:master_teams!games_home_team_id_fkey(id, school_name, short_name),
          away_team:master_teams!games_away_team_id_fkey(id, school_name, short_name)`
       )
@@ -100,15 +102,24 @@ export default async function AdminPickemTestEntriesPage({
 
   const games = (gamesData ?? []) as unknown as GameRow[];
 
+  // Only games still open for picks can seed the template — a template whose
+  // examples name a kicked-off game produces a file that can't be used as a
+  // real entry. Openness is evaluated here on the server (not in the client
+  // component) so "in the future" is one consistent instant and can't drift
+  // with a long-open tab or a clock skew between server and browser.
+  //
   // The import RPC matches CSV picks against school_name OR short_name, so
   // the template uses school_name — the unambiguous one. The records view's
   // per-pick dropdown labels with short_name where there is one, matching
   // every other admin pick editor.
-  const importGames: ImportGame[] = games.map((g) => ({
-    id: g.id,
-    homeName: g.home_team.school_name,
-    awayName: g.away_team.school_name,
-  }));
+  const now = Date.now();
+  const openImportGames: ImportGame[] = games
+    .filter((g) => g.status === "scheduled" && new Date(g.kickoff_time).getTime() > now)
+    .map((g) => ({
+      id: g.id,
+      homeName: g.home_team.school_name,
+      awayName: g.away_team.school_name,
+    }));
 
   const recordGames: RecordGame[] = games.map((g) => ({
     id: g.id,
@@ -143,7 +154,11 @@ export default async function AdminPickemTestEntriesPage({
           before importing test entries.
         </p>
       ) : (
-        <TestEntryImport scheduleId={scheduleId} weekLabel={weekLabel} games={importGames} />
+        <TestEntryImport
+          scheduleId={scheduleId}
+          weekLabel={weekLabel}
+          openGames={openImportGames}
+        />
       )}
 
       <h2 className="mb-3 font-display text-lg font-semibold uppercase tracking-wide text-ink">
