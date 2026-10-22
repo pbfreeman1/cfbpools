@@ -55,6 +55,10 @@ export type PickemTestPick = {
 export type PickemTestEntry = {
   entry_id: string;
   entry_name: string;
+  // Merged in from admin_get_pickem_test_entry_names — the records RPC
+  // doesn't carry them. Null only if a row predates name support.
+  first_name: string | null;
+  last_name: string | null;
   batch_id: string | null;
   created_at: string;
   wins: number;
@@ -71,7 +75,7 @@ export type PickemTestEntry = {
 
 export async function importPickemTestEntries(
   scheduleId: string,
-  rows: { entry_name: string; picks: string[] }[],
+  rows: { entry_name: string; first_name: string; last_name: string; picks: string[] }[],
   dryRun: boolean
 ): Promise<PickemTestImportResult> {
   const { supabase } = await requireAdmin();
@@ -90,17 +94,52 @@ export async function importPickemTestEntries(
 // transient error apart from "this week genuinely has no test entries" and
 // keep showing the last good data — same convention as
 // getPickemLeaderboard() in app/actions/pickem.ts.
+//
+// The records RPC carries no entrant name, so the names come from
+// admin_get_pickem_test_entry_names and are merged here by entry_id — one
+// place, so every caller (first render and each poll) gets them. A failed
+// names fetch is non-fatal: the records still render, just without names,
+// since losing a display-only field shouldn't blank the whole list.
 export async function getPickemTestEntries(
   scheduleId: string
 ): Promise<PickemTestEntry[] | null> {
   const { supabase } = await requireAdmin();
 
-  const { data, error } = await supabase.rpc("admin_get_pickem_test_entries", {
-    p_schedule_id: scheduleId,
-  });
+  const [{ data, error }, { data: nameData }] = await Promise.all([
+    supabase.rpc("admin_get_pickem_test_entries", { p_schedule_id: scheduleId }),
+    supabase.rpc("admin_get_pickem_test_entry_names", { p_schedule_id: scheduleId }),
+  ]);
 
   if (error || !data) return null;
-  return data as PickemTestEntry[];
+
+  const names = new Map(
+    ((nameData ?? []) as { entry_id: string; first_name: string | null; last_name: string | null }[]).map(
+      (n) => [n.entry_id, n]
+    )
+  );
+
+  return (data as Omit<PickemTestEntry, "first_name" | "last_name">[]).map((e) => ({
+    ...e,
+    first_name: names.get(e.entry_id)?.first_name ?? null,
+    last_name: names.get(e.entry_id)?.last_name ?? null,
+  }));
+}
+
+export async function updatePickemTestEntryName(
+  entryId: string,
+  firstName: string,
+  lastName: string
+): Promise<{ ok: boolean; message?: string }> {
+  const { supabase } = await requireAdmin();
+
+  const { error } = await supabase.rpc("admin_update_pickem_test_entry_name", {
+    p_entry_id: entryId,
+    p_first_name: firstName,
+    p_last_name: lastName,
+  });
+
+  if (error) return { ok: false, message: error.message };
+  return { ok: true };
 }
 
 export async function updatePickemTestEntry(

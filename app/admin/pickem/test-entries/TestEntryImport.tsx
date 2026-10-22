@@ -22,7 +22,12 @@ export type ImportGame = {
   awayName: string;
 };
 
-type ParsedRow = { entry_name: string; picks: string[] };
+type ParsedRow = {
+  entry_name: string;
+  first_name: string;
+  last_name: string;
+  picks: string[];
+};
 
 export default function TestEntryImport({
   scheduleId,
@@ -75,12 +80,17 @@ export default function TestEntryImport({
 
   const downloadTemplate = () => {
     if (!canDownloadTemplate) return;
-    const header = ["entry_name", ...Array.from({ length: PICK_COLUMNS }, (_, i) => `pick_${i + 1}`)];
+    const header = [
+      "entry_name",
+      "first_name",
+      "last_name",
+      ...Array.from({ length: PICK_COLUMNS }, (_, i) => `pick_${i + 1}`),
+    ];
     // One row per side of the six matchups, so the admin can see that either
     // team in a game is a valid value.
     const rows = [
-      ["Test Entry 1", ...templateGames.map((g) => g.awayName)],
-      ["Test Entry 2", ...templateGames.map((g) => g.homeName)],
+      ["Test Entry 1", "Jane", "Doe", ...templateGames.map((g) => g.awayName)],
+      ["Test Entry 2", "John", "Roe", ...templateGames.map((g) => g.homeName)],
     ];
     const blob = new Blob([toCsv(header, rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -108,9 +118,19 @@ export default function TestEntryImport({
       setParseError("That file is empty.");
       return;
     }
-    if (header[0] !== "entry_name") {
+    // Columns are located by header name, not position, so the three name
+    // columns and the pick_N columns can appear in any order.
+    const nameIdx = header.indexOf("entry_name");
+    const firstIdx = header.indexOf("first_name");
+    const lastIdx = header.indexOf("last_name");
+    const missingCols = [
+      nameIdx < 0 ? "entry_name" : null,
+      firstIdx < 0 ? "first_name" : null,
+      lastIdx < 0 ? "last_name" : null,
+    ].filter((c): c is string => c !== null);
+    if (missingCols.length > 0) {
       setParseError(
-        `The first column must be "entry_name" (found "${header[0] || "—"}"). Download the template below.`
+        `Missing required column${missingCols.length === 1 ? "" : "s"}: ${missingCols.join(", ")}. Download the template below.`
       );
       return;
     }
@@ -132,23 +152,31 @@ export default function TestEntryImport({
     const pickIdx = header
       .map((h, i) => (/^pick_\d+$/.test(h) ? i : -1))
       .filter((i) => i >= 0);
-    const nameIdx = header.indexOf("entry_name");
 
     const candidates: ParsedRow[] = rows.map((r) => ({
       entry_name: (r[nameIdx] ?? "").trim(),
+      first_name: (r[firstIdx] ?? "").trim(),
+      last_name: (r[lastIdx] ?? "").trim(),
       picks: pickIdx.map((i) => (r[i] ?? "").trim()).filter((v) => v !== ""),
     }));
 
-    const countErrors: PickemTestImportError[] = candidates
-      .map((row, i) =>
-        row.picks.length === PICK_COLUMNS
-          ? null
-          : { row: i + 1, entry_name: row.entry_name, error: `Expected exactly ${PICK_COLUMNS} picks` }
-      )
+    // One error per row, names before picks — the same precedence the import
+    // RPC uses, so a row rejected here reports what the server would have.
+    // entry_name itself is left to the RPC ("Missing entry_name").
+    const rowProblems: PickemTestImportError[] = candidates
+      .map((row, i) => {
+        const error =
+          !row.first_name || !row.last_name
+            ? "Missing first_name or last_name"
+            : row.picks.length !== PICK_COLUMNS
+              ? `Expected exactly ${PICK_COLUMNS} picks`
+              : null;
+        return error ? { row: i + 1, entry_name: row.entry_name, error } : null;
+      })
       .filter((e): e is PickemTestImportError => e !== null);
 
-    if (countErrors.length > 0) {
-      setRowErrors(countErrors);
+    if (rowProblems.length > 0) {
+      setRowErrors(rowProblems);
       return;
     }
 
@@ -205,12 +233,14 @@ export default function TestEntryImport({
         Upload test entries
       </h2>
       <p className="mb-3 text-xs text-muted">
-        CSV with a header row: <span className="font-data">entry_name</span>, then{" "}
-        <span className="font-data">pick_1</span>…
+        CSV with a header row: <span className="font-data">entry_name</span>,{" "}
+        <span className="font-data">first_name</span>, <span className="font-data">last_name</span>,
+        then <span className="font-data">pick_1</span>…
         <span className="font-data">pick_{PICK_COLUMNS}</span> — one team name (full or short) per
-        column, in any order. 6 picks, any 6 different games that haven&apos;t kicked off, and each
-        game needs a spread. Max {MAX_ROWS} rows. Test entries never count toward eCount or shift
-        row numbers, and have no email address.
+        pick column. Columns are matched by header name, so their order doesn&apos;t matter. Every
+        row needs a first and last name, plus 6 picks, any 6 different games that haven&apos;t
+        kicked off, and each game needs a spread. Max {MAX_ROWS} rows. Test entries never count
+        toward eCount or shift row numbers, and have no email address.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -325,6 +355,8 @@ export default function TestEntryImport({
                 <tr className="bg-app text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="px-3 py-1.5 text-left">#</th>
                   <th className="px-3 py-1.5 text-left">Entry name</th>
+                  <th className="px-3 py-1.5 text-left">First</th>
+                  <th className="px-3 py-1.5 text-left">Last</th>
                   {Array.from({ length: PICK_COLUMNS }, (_, i) => (
                     <th key={i} className="px-3 py-1.5 text-left">
                       Pick {i + 1}
@@ -337,6 +369,8 @@ export default function TestEntryImport({
                   <tr key={i}>
                     <td className="px-3 py-1.5 font-data text-xs text-muted">{i + 1}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-ink">{r.entry_name || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-ink">{r.first_name || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-ink">{r.last_name || "—"}</td>
                     {Array.from({ length: PICK_COLUMNS }, (_, c) => (
                       <td key={c} className="whitespace-nowrap px-3 py-1.5 text-muted">
                         {r.picks[c] || "—"}

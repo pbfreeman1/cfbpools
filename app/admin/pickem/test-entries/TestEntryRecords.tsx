@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   getPickemTestEntries,
   updatePickemTestEntry,
+  updatePickemTestEntryName,
   deletePickemTestEntries,
   type PickemTestEntry,
   type PickemTestPick,
@@ -121,7 +122,15 @@ function EntryCard({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(entry.entry_name);
+  // Entrant name is a separate inline editor from the entry name — they go
+  // to different RPCs (admin_update_pickem_test_entry_name vs
+  // admin_update_pickem_test_entry), so they get separate edit state.
+  const [editingEntrant, setEditingEntrant] = useState(false);
+  const [first, setFirst] = useState(entry.first_name ?? "");
+  const [last, setLast] = useState(entry.last_name ?? "");
   const [busy, setBusy] = useState(false);
+
+  const entrantName = [entry.first_name, entry.last_name].filter(Boolean).join(" ");
 
   const saveName = async () => {
     const trimmed = name.trim();
@@ -138,6 +147,32 @@ function EntryCard({
       setName(entry.entry_name);
     } else {
       setRenaming(false);
+      onRefresh();
+    }
+  };
+
+  const saveEntrant = async () => {
+    const f = first.trim();
+    const l = last.trim();
+    // The RPC rejects a blank either side; catching it here keeps the editor
+    // open with the cursor where it is instead of round-tripping to an error.
+    if (!f || !l) {
+      onError("First and last name are both required.");
+      return;
+    }
+    if (f === (entry.first_name ?? "") && l === (entry.last_name ?? "")) {
+      setEditingEntrant(false);
+      return;
+    }
+    setBusy(true);
+    const res = await updatePickemTestEntryName(entry.entry_id, f, l);
+    setBusy(false);
+    if (!res.ok) {
+      onError(res.message ?? "Entrant rename failed.");
+      setFirst(entry.first_name ?? "");
+      setLast(entry.last_name ?? "");
+    } else {
+      setEditingEntrant(false);
       onRefresh();
     }
   };
@@ -209,14 +244,79 @@ function EntryCard({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setRenaming(true)}
-              title="Click to rename"
-              className="block max-w-full truncate text-left text-sm font-medium text-ink hover:text-gold-400"
-            >
-              {entry.entry_name}
-            </button>
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+              <button
+                type="button"
+                onClick={() => setRenaming(true)}
+                title="Click to rename the entry"
+                className="max-w-full truncate text-left text-sm font-medium text-ink hover:text-gold-400"
+              >
+                {entry.entry_name}
+              </button>
+              {editingEntrant ? (
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={first}
+                    onChange={(e) => setFirst(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveEntrant();
+                      if (e.key === "Escape") {
+                        setEditingEntrant(false);
+                        setFirst(entry.first_name ?? "");
+                        setLast(entry.last_name ?? "");
+                      }
+                    }}
+                    placeholder="First"
+                    autoFocus
+                    className="w-24 rounded-md border border-edge bg-app px-2 py-0.5 text-xs text-ink"
+                  />
+                  <input
+                    type="text"
+                    value={last}
+                    onChange={(e) => setLast(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveEntrant();
+                      if (e.key === "Escape") {
+                        setEditingEntrant(false);
+                        setFirst(entry.first_name ?? "");
+                        setLast(entry.last_name ?? "");
+                      }
+                    }}
+                    placeholder="Last"
+                    className="w-24 rounded-md border border-edge bg-app px-2 py-0.5 text-xs text-ink"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveEntrant()}
+                    disabled={busy}
+                    className="rounded-md bg-gold-500 px-2 py-0.5 text-[11px] font-semibold text-app transition hover:bg-gold-600 disabled:opacity-60"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEntrant(false);
+                      setFirst(entry.first_name ?? "");
+                      setLast(entry.last_name ?? "");
+                    }}
+                    className="text-[11px] text-muted hover:text-gold-400"
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditingEntrant(true)}
+                  title="Click to edit the entrant's name"
+                  className="truncate text-left text-xs text-muted hover:text-gold-400"
+                >
+                  {entrantName || "+ add entrant name"}
+                </button>
+              )}
+            </div>
           )}
 
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
