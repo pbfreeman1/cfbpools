@@ -58,12 +58,13 @@ export default async function LockedPicksPage({
   const { data: allEntriesData } = await supabase
     .from("survivor_entries")
     .select(
-      `id, entry_name, status, profiles:profiles!survivor_entries_user_id_fkey(first_name, last_name)`
+      `id, entry_name, status, eliminated_week_number, profiles:profiles!survivor_entries_user_id_fkey(first_name, last_name)`
     );
   const allEntries = (allEntriesData ?? []) as unknown as {
     id: string;
     entry_name: string | null;
     status: string;
+    eliminated_week_number: number | null;
     profiles: { first_name: string | null; last_name: string | null } | null;
   }[];
 
@@ -81,6 +82,7 @@ export default async function LockedPicksPage({
       ownerName: first ? (lastInitial ? `${first} ${lastInitial}.` : first) : null,
       bonusFinalizedCount: 0,
       eliminated: e.status === "eliminated",
+      eliminatedWeek: e.status === "eliminated" ? e.eliminated_week_number : null,
       picksByWeek: {},
       lastName: last,
       firstName: first,
@@ -90,24 +92,52 @@ export default async function LockedPicksPage({
   // survivor_picks_locked is owner-privileged and only surfaces a pick once
   // one of its teams' games has kicked off — the pre-lock privacy rule lives
   // in the view's WHERE clause, so this page never has to guard it itself.
-  const { data: rows } = await supabase
-    .from("survivor_picks_locked")
-    .select(
-      `entry_id, week_number,
-       team_name, team_short_name, team_logo_url,
-       is_bonus_week, bonus_team_id,
-       bonus_team_name, bonus_team_short_name, bonus_team_logo_url`
-    )
-    .order("week_number", { ascending: true });
+  //
+  // PostgREST caps every response at 1,000 rows, and this view holds one row
+  // per locked pick for the whole pool (2,000+ by mid-season). A single
+  // unpaginated select silently truncated at the 1,000th row — ordered by
+  // week, that meant Weeks 1–4 plus a sliver of Week 5, with every later
+  // week missing. Page through with .range() until a short page comes back;
+  // the (week_number, id) ordering is total, so pages never overlap or skip.
+  const PAGE_SIZE = 1000;
+  type LockedViewRow = {
+    entry_id: string;
+    week_number: number;
+    team_name: string | null;
+    team_short_name: string | null;
+    team_logo_url: string | null;
+    is_bonus_week: boolean;
+    bonus_team_id: string | null;
+    bonus_team_name: string | null;
+    bonus_team_short_name: string | null;
+    bonus_team_logo_url: string | null;
+  };
+  const rows: LockedViewRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error: pageError } = await supabase
+      .from("survivor_picks_locked")
+      .select(
+        `id, entry_id, week_number,
+         team_name, team_short_name, team_logo_url,
+         is_bonus_week, bonus_team_id,
+         bonus_team_name, bonus_team_short_name, bonus_team_logo_url`
+      )
+      .order("week_number", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (pageError || !page) break;
+    rows.push(...(page as unknown as LockedViewRow[]));
+    if (page.length < PAGE_SIZE) break;
+  }
 
   // Weeks that have at least one locked pick anywhere in the pool — these
   // become the table's columns, ascending so Week 1 sits next to the entry
   // name.
   const weekNumbers = Array.from(
-    new Set((rows ?? []).map((r) => r.week_number as number))
+    new Set(rows.map((r) => r.week_number))
   ).sort((a, b) => a - b);
 
-  (rows ?? []).forEach((r) => {
+  rows.forEach((r) => {
     const entry = byEntry.get(r.entry_id);
     if (!entry) return;
     const pick: LockedPick = {

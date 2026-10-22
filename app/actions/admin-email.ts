@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/adminAuth";
 import { sendEmailWithResult, type EmailStream } from "@/lib/email";
 import { formatKickoff } from "@/lib/formatDate";
+import { fetchAll } from "@/lib/supabase/fetchAll";
 import { runWeeklyEmails, type WeeklyJobType, type JobResult } from "@/lib/weeklyEmails";
 
 const VALID_STREAMS: EmailStream[] = ["picks", "welcome", "updates"];
@@ -123,6 +124,32 @@ export async function copyPickemEntrantEmails(): Promise<string[]> {
     .select("entrant_email")
     .eq("schedule_id", scheduleId);
   return dedupeEmails((data ?? []).map((r) => r.entrant_email as string | null));
+}
+
+/**
+ * (d) Every registered user's account email — anyone with a profile, whether
+ * or not they ever entered a pool. Paged: PostgREST silently truncates any
+ * response at 1,000 rows.
+ */
+export async function copyAllUserEmails(): Promise<string[]> {
+  const { supabase } = await requireAdmin();
+  const rows = await fetchAll<{ email: string | null }>((from, to) =>
+    supabase.from("profiles").select("email").order("id").range(from, to)
+  );
+  return dedupeEmails(rows.map((r) => r.email));
+}
+
+/**
+ * (e) Everyone who has entered Pick'em in ANY week (not just the current
+ * one) — distinct entrant emails across the whole table. Paged for the same
+ * 1,000-row reason as above; pickem_entries is already past that.
+ */
+export async function copyAllPickemEntrantEmails(): Promise<string[]> {
+  const { supabase } = await requireAdmin();
+  const rows = await fetchAll<{ entrant_email: string | null }>((from, to) =>
+    supabase.from("pickem_entries").select("entrant_email").order("id").range(from, to)
+  );
+  return dedupeEmails(rows.map((r) => r.entrant_email));
 }
 
 /** (b) Alive Survivor entries' account emails. */

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SEASON, ENTRY_DEADLINE } from "@/lib/season";
+import { fetchAll } from "@/lib/supabase/fetchAll";
 import { isReadableOnDark } from "@/lib/color";
 import { formatMonthDay } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
@@ -21,6 +22,14 @@ type TeamRef = {
 
 type CellData = {
   locked: boolean;
+  // Outcome of a locked pick, from final game scores. "pending" = locked but
+  // not every game involved has finished (a bonus week stays pending until
+  // both games are final, unless one team has already lost). null = no pick
+  // or not locked yet.
+  result: "won" | "lost" | "pending" | null;
+  // Week is after the entry's elimination week: the cell is moot, whatever
+  // pick data sits in it never counted.
+  voided: boolean;
   pick: {
     shortName: string;
     logoUrl: string | null;
@@ -31,6 +40,29 @@ type CellData = {
     bonusColor: string | null;
   } | null;
 };
+
+type GameRow = {
+  id: string;
+  schedule_id: string;
+  kickoff_time: string;
+  status: string;
+  home_score: number | null;
+  away_score: number | null;
+  home_team: { id: string; conference: string };
+  away_team: { id: string; conference: string };
+};
+
+// Did `teamId` win its game this week? "pending" until the game is final
+// with scores recorded (also covers a team with no game found).
+function teamOutcome(weekGames: GameRow[], teamId: string): "won" | "lost" | "pending" {
+  const g = weekGames.find((x) => x.home_team.id === teamId || x.away_team.id === teamId);
+  if (!g || g.status !== "final" || g.home_score === null || g.away_score === null) {
+    return "pending";
+  }
+  const mine = g.home_team.id === teamId ? g.home_score : g.away_score;
+  const theirs = g.home_team.id === teamId ? g.away_score : g.home_score;
+  return mine > theirs ? "won" : "lost";
+}
 
 export default async function SurvivorHomePage({
   searchParams,
@@ -89,15 +121,20 @@ export default async function SurvivorHomePage({
   }
 
   // Personalized section — only meaningful if logged in.
-  let entries: { id: string; entry_number: number; entry_name: string | null; status: string }[] =
-    [];
+  let entries: {
+    id: string;
+    entry_number: number;
+    entry_name: string | null;
+    status: string;
+    eliminated_week_number: number | null;
+  }[] = [];
   // entryId -> scheduleId -> cell data, for the week-by-week grid.
   const grid = new Map<string, Map<string, CellData>>();
 
   if (user) {
     const { data } = await supabase
       .from("survivor_entries")
-      .select("id, entry_number, entry_name, status")
+      .select("id, entry_number, entry_name, status, eliminated_week_number")
       .eq("user_id", user.id)
       .order("entry_number");
     entries = data ?? [];
@@ -115,14 +152,20 @@ export default async function SurvivorHomePage({
         )
         .in("entry_id", entryIds);
 
-      const { data: games } = await supabase
-        .from("games")
-        .select(
-          `schedule_id, kickoff_time,
-           home_team:master_teams!games_home_team_id_fkey(id, conference),
-           away_team:master_teams!games_away_team_id_fkey(id, conference)`
-        )
-        .in("schedule_id", scheduleIds);
+      // Paged: the season's games already sit just under PostgREST's silent
+      // 1,000-row cap, and later weeks' schedules are still being filled in.
+      const games = await fetchAll<GameRow>((from, to) =>
+        supabase
+          .from("games")
+          .select(
+            `id, schedule_id, kickoff_time, status, home_score, away_score,
+             home_team:master_teams!games_home_team_id_fkey(id, conference),
+             away_team:master_teams!games_away_team_id_fkey(id, conference)`
+          )
+          .in("schedule_id", scheduleIds)
+          .order("id")
+          .range(from, to)
+      );
 
       const nowMs = Date.now();
 
@@ -141,6 +184,8 @@ export default async function SurvivorHomePage({
           secGames.length > 0 && secGames.every((g) => new Date(g.kickoff_time).getTime() <= nowMs)
         );
       });
+
+      const weekNumberBySchedule = new Map((weeks ?? []).map((w) => [w.id, w.week_number]));
 
       entries.forEach((e) => grid.set(e.id, new Map()));
 
@@ -161,8 +206,28 @@ export default async function SurvivorHomePage({
           ? Math.min(...relevantGames.map((g) => new Date(g.kickoff_time).getTime()))
           : Infinity;
 
+        const isLocked = nowMs >= earliestKickoff;
+        const weekGames = (games ?? []).filter((g) => g.schedule_id === p.schedule_id);
+        const outcomes = [teamOutcome(weekGames, team.id)];
+        if (p.is_bonus_week && bonusTeam) outcomes.push(teamOutcome(weekGames, bonusTeam.id));
+        // Bonus weeks need BOTH to win; either loss settles it immediately.
+        const result: CellData["result"] = !isLocked
+          ? null
+          : outcomes.includes("lost")
+            ? "lost"
+            : outcomes.every((o) => o === "won")
+              ? "won"
+              : "pending";
+
+        const entryRow = entries.find((en) => en.id === p.entry_id);
+        const weekNumber = weekNumberBySchedule.get(p.schedule_id) ?? 0;
+        const voided =
+          entryRow?.eliminated_week_number != null && weekNumber > entryRow.eliminated_week_number;
+
         grid.get(p.entry_id)?.set(p.schedule_id, {
-          locked: nowMs >= earliestKickoff,
+          locked: isLocked,
+          result,
+          voided,
           pick: {
             shortName: team.short_name || team.school_name,
             logoUrl: team.logo_url,
@@ -181,6 +246,9 @@ export default async function SurvivorHomePage({
           if (!grid.get(e.id)?.has(w.id)) {
             grid.get(e.id)?.set(w.id, {
               locked: secAllKickedOffByWeek.get(w.id) ?? false,
+              result: null,
+              voided:
+                e.eliminated_week_number != null && w.week_number > e.eliminated_week_number,
               pick: null,
             });
           }
@@ -393,166 +461,286 @@ export default async function SurvivorHomePage({
             // A genuinely fixed left column (outside the horizontally-scrolling
             // week grid) rather than `position: sticky` table cells — sticky
             // <td>/<th> is unreliable during horizontal scroll on mobile Safari.
-            // Shared header row (blank spacer + Wk labels), then each entry
-            // renders its OWN [name/status + picks] pair followed immediately
-            // by its own Bonus Pick link — a per-entry row block, rather than
-            // one shared table with all bonus links tacked on below it.
-            <div className="mb-4">
-              <div className="mb-1 flex gap-3">
-                <div className="w-[110px] flex-shrink-0" />
-                <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
-                  <div
-                    className="grid gap-1"
-                    style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
-                  >
-                    {(weeks ?? []).map((w) => (
-                      <div
-                        key={w.id}
-                        className="flex h-5 items-center justify-center font-data text-xs font-medium text-muted"
-                      >
-                        Wk{w.week_number}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            //
+            // Each entry renders its OWN block: [name/status] beside ONE
+            // scroller that holds both its week-label row and its pick cells.
+            // The labels used to live in a separate shared scroller above all
+            // entries, so swiping a row left/right never moved them and you
+            // lost track of which week you were looking at. Sharing the
+            // scroller makes the header travel with the cells by construction.
+            (() => {
+              const weekList = weeks ?? [];
+              const anyEditable = entries.some(
+                (en) =>
+                  en.status === "active" &&
+                  weekList.some((w) => {
+                    const c = grid.get(en.id)?.get(w.id);
+                    return c && !c.locked && !c.voided;
+                  })
+              );
 
-              {entries.map((entry) => (
-                <div key={entry.id} className="mb-3">
-                  <div className="flex gap-3">
-                    <div className="flex w-[110px] flex-shrink-0 flex-col justify-center px-2">
-                      <Link
-                        href={`/survivor/${entry.id}`}
-                        className="block truncate text-sm font-medium text-ink hover:text-gold-400"
-                      >
-                        {entry.entry_name || `Entry ${entry.entry_number}`}
-                      </Link>
-                      <span
-                        className={
-                          entry.status === "eliminated"
-                            ? "text-xs font-medium text-dead"
-                            : "text-xs font-medium text-alive"
-                        }
-                      >
-                        {entry.status === "eliminated" ? "Eliminated" : "Alive"}
-                      </span>
+              return (
+                <div className="mb-4">
+                  {anyEditable && (
+                    <div className="mb-3 rounded-md border border-gold-500/60 bg-gold-500/10 px-3 py-2 text-xs text-ink">
+                      <span className="font-semibold text-gold-400">To change a pick:</span> tap any
+                      week with a gold outline and a &#9998; badge. You can edit it until that
+                      team&apos;s game kicks off &mdash; after that the week is locked and greyed out.
                     </div>
+                  )}
 
-                    <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
-                      <div
-                        className="grid gap-1"
-                        style={{ gridTemplateColumns: `repeat(${(weeks ?? []).length}, 56px)` }}
-                      >
-                        {(weeks ?? []).map((w) => {
-                          const cell = grid.get(entry.id)?.get(w.id) ?? { locked: false, pick: null };
-                          const base =
-                            "relative flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border text-center";
+                  <div className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm border-2 border-gold-400" />
+                      Editable
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm border-2 border-alive bg-app" />
+                      Won
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm border-2 border-dead bg-app" />
+                      Lost
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-3 w-3 rounded-sm border-2 border-edge bg-app" />
+                      Locked / in play
+                    </span>
+                  </div>
 
-                          const bonusStyle = cell.pick?.isBonus
-                            ? {
-                                background: `linear-gradient(135deg, ${
-                                  cell.pick.color || "#232B45"
-                                } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
-                              }
-                            : undefined;
-
-                          const inner = cell.pick ? (
-                            cell.pick.isBonus ? (
-                              <>
-                                {cell.pick.logoUrl && (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={cell.pick.logoUrl}
-                                    alt=""
-                                    className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
-                                  />
-                                )}
-                                {cell.pick.bonusLogoUrl && (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={cell.pick.bonusLogoUrl}
-                                    alt=""
-                                    className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
-                                  />
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                {cell.pick.logoUrl && (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={cell.pick.logoUrl} alt="" className="h-5 w-5 object-contain" />
-                                )}
-                                {cell.pick.color && (
-                                  <span
-                                    className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
-                                    style={{ backgroundColor: cell.pick.color }}
-                                  />
-                                )}
-                                <span
-                                  className="max-w-[52px] truncate text-[10px] font-semibold text-ink"
-                                  style={
-                                    !cell.locked && isReadableOnDark(cell.pick.color)
-                                      ? { color: cell.pick.color as string }
-                                      : undefined
-                                  }
-                                >
-                                  {cell.pick.shortName}
-                                </span>
-                              </>
-                            )
-                          ) : cell.locked ? (
-                            <span className="text-lg leading-none text-dead">&#10005;</span>
-                          ) : (
-                            <span className="text-lg leading-none text-muted">+</span>
-                          );
-
-                          const title = cell.pick?.isBonus
-                            ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
-                            : undefined;
-
-                          if (cell.locked) {
-                            return (
-                              <div
-                                key={`${entry.id}-${w.id}`}
-                                title={title}
-                                style={bonusStyle}
-                                className={`${base} border-edge bg-app opacity-50`}
-                              >
-                                {inner}
-                              </div>
-                            );
-                          }
-
-                          return (
+                  {entries.map((entry) => (
+                    <div key={entry.id} className="mb-3">
+                      <div className="flex gap-3">
+                        <div className="w-[110px] flex-shrink-0">
+                          {/* Spacer matching the week-label row (h-5 + gap-1) so the
+                              name lines up with the pick cells beside it. */}
+                          <div className="mb-1 h-5" />
+                          <div className="flex h-14 flex-col justify-center px-2">
                             <Link
-                              key={`${entry.id}-${w.id}`}
-                              href={`/survivor/${entry.id}?week=${w.week_number}`}
-                              title={title}
-                              style={bonusStyle}
-                              className={`${base} ${
-                                cell.pick
-                                  ? "border-edge bg-surface hover:ring-2 hover:ring-gold-400"
-                                  : "border-dashed border-edge bg-app hover:bg-surface-hover"
-                              }`}
+                              href={`/survivor/${entry.id}`}
+                              className="block truncate text-sm font-medium text-ink hover:text-gold-400"
                             >
-                              {inner}
+                              {entry.entry_name || `Entry ${entry.entry_number}`}
                             </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                            <span
+                              className={
+                                entry.status === "eliminated"
+                                  ? "text-xs font-medium text-dead"
+                                  : "text-xs font-medium text-alive"
+                              }
+                            >
+                              {entry.status === "eliminated" ? "Eliminated" : "Alive"}
+                            </span>
+                          </div>
+                        </div>
 
-                  <Link
-                    href={`/survivor/entries/${entry.id}/bonus`}
-                    className="mt-1.5 flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
-                  >
-                    <span aria-hidden="true">⭐</span>
-                    Make a Bonus Pick for this entry
-                  </Link>
+                        <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                          <div className="flex w-max flex-col gap-1">
+                            <div
+                              className="grid gap-1"
+                              style={{ gridTemplateColumns: `repeat(${weekList.length}, 56px)` }}
+                            >
+                              {weekList.map((w) => (
+                                <div
+                                  key={w.id}
+                                  className={`flex h-5 items-center justify-center font-data text-xs ${
+                                    w.id === currentWeek?.id
+                                      ? "rounded-sm bg-gold-500/15 font-semibold text-gold-400"
+                                      : "font-medium text-muted"
+                                  }`}
+                                >
+                                  Wk{w.week_number}
+                                </div>
+                              ))}
+                            </div>
+
+                            <div
+                              className="grid gap-1"
+                              style={{ gridTemplateColumns: `repeat(${weekList.length}, 56px)` }}
+                            >
+                              {weekList.map((w) => {
+                                const cell = grid.get(entry.id)?.get(w.id) ?? {
+                                  locked: false,
+                                  result: null,
+                                  voided: false,
+                                  pick: null,
+                                };
+                                const readOnly = entry.status === "eliminated";
+                                const editable = !cell.locked && !cell.voided && !readOnly;
+                                const base =
+                                  "relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-md border-2 text-center";
+
+                                // Moot week after elimination: quiet placeholder.
+                                if (cell.voided) {
+                                  return (
+                                    <div
+                                      key={`${entry.id}-${w.id}`}
+                                      className={`${base} flex items-center justify-center border-transparent`}
+                                    >
+                                      <span className="text-sm text-edge">&ndash;</span>
+                                    </div>
+                                  );
+                                }
+
+                                const bonusStyle = cell.pick?.isBonus
+                                  ? {
+                                      background: `linear-gradient(135deg, ${
+                                        cell.pick.color || "#232B45"
+                                      } 50%, ${cell.pick.bonusColor || "#3a4568"} 50%)`,
+                                    }
+                                  : undefined;
+
+                                const inner = cell.pick ? (
+                                  cell.pick.isBonus ? (
+                                    <>
+                                      {cell.pick.logoUrl && (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={cell.pick.logoUrl}
+                                          alt=""
+                                          className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
+                                        />
+                                      )}
+                                      {cell.pick.bonusLogoUrl && (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={cell.pick.bonusLogoUrl}
+                                          alt=""
+                                          className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
+                                        />
+                                      )}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {cell.pick.logoUrl && (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={cell.pick.logoUrl}
+                                          alt=""
+                                          className="h-5 w-5 object-contain"
+                                        />
+                                      )}
+                                      {cell.pick.color && (
+                                        <span
+                                          className="h-1.5 w-1.5 flex-shrink-0 rounded-full"
+                                          style={{ backgroundColor: cell.pick.color }}
+                                        />
+                                      )}
+                                      <span
+                                        className="max-w-[48px] truncate text-[10px] font-semibold text-ink"
+                                        style={
+                                          editable && isReadableOnDark(cell.pick.color)
+                                            ? { color: cell.pick.color as string }
+                                            : undefined
+                                        }
+                                      >
+                                        {cell.pick.shortName}
+                                      </span>
+                                    </>
+                                  )
+                                ) : cell.locked || readOnly ? (
+                                  <span className="text-lg leading-none text-dead">&#10005;</span>
+                                ) : (
+                                  <>
+                                    <span className="text-lg leading-none text-gold-400">+</span>
+                                    <span className="text-[10px] font-semibold uppercase text-gold-400">
+                                      Pick
+                                    </span>
+                                  </>
+                                );
+
+                                // Border colour carries the status: gold = you can
+                                // still edit it, green/red = settled result, plain
+                                // edge = locked but the game isn't final yet.
+                                const border = editable
+                                  ? cell.pick
+                                    ? "border-gold-400"
+                                    : "border-dashed border-gold-400"
+                                  : cell.result === "won"
+                                    ? "border-alive"
+                                    : cell.result === "lost"
+                                      ? "border-dead"
+                                      : "border-edge";
+
+                                const badge = editable ? (
+                                  <span className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-gold-500 text-[9px] leading-none text-app shadow">
+                                    &#9998;
+                                  </span>
+                                ) : cell.result === "won" ? (
+                                  <span className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-alive text-[9px] font-bold leading-none text-app">
+                                    &#10003;
+                                  </span>
+                                ) : cell.result === "lost" ? (
+                                  <span className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-dead text-[9px] font-bold leading-none text-white">
+                                    &#10005;
+                                  </span>
+                                ) : cell.pick ? (
+                                  <span className="absolute right-0.5 top-0.5 text-[10px] leading-none">
+                                    &#128274;
+                                  </span>
+                                ) : null;
+
+                                const title = cell.pick?.isBonus
+                                  ? `${cell.pick.shortName} + ${cell.pick.bonusShortName} (bonus)`
+                                  : undefined;
+
+                                const content = (
+                                  <>
+                                    <span
+                                      style={bonusStyle}
+                                      className={`absolute inset-0 flex flex-col items-center justify-center gap-0.5 ${
+                                        editable ? "" : "opacity-60 grayscale"
+                                      }`}
+                                    >
+                                      {inner}
+                                    </span>
+                                    {badge}
+                                  </>
+                                );
+
+                                if (editable) {
+                                  return (
+                                    <Link
+                                      key={`${entry.id}-${w.id}`}
+                                      href={`/survivor/${entry.id}?week=${w.week_number}`}
+                                      title={title ?? "Tap to change this pick"}
+                                      aria-label={`${cell.pick ? "Edit" : "Make"} pick for ${
+                                        entry.entry_name || `Entry ${entry.entry_number}`
+                                      }, week ${w.week_number}`}
+                                      className={`${base} ${border} bg-surface transition hover:ring-2 hover:ring-gold-400`}
+                                    >
+                                      {content}
+                                    </Link>
+                                  );
+                                }
+
+                                return (
+                                  <div
+                                    key={`${entry.id}-${w.id}`}
+                                    title={title}
+                                    className={`${base} ${border} bg-app`}
+                                  >
+                                    {content}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Link
+                        href={`/survivor/entries/${entry.id}/bonus`}
+                        className="mt-1.5 flex items-center gap-2 rounded-md border border-edge bg-surface px-3 py-2 text-sm font-medium text-gold-400 transition hover:bg-surface-hover"
+                      >
+                        <span aria-hidden="true">⭐</span>
+                        Make a Bonus Pick for this entry
+                      </Link>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()
           }
         </>
       )}

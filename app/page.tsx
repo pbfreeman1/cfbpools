@@ -87,23 +87,41 @@ export default async function Home() {
                 wins the pot.
               </p>
 
-              <div className="mb-5 flex items-end justify-between rounded-lg border border-edge bg-app px-4 py-4">
-                <div>
-                  <p className="font-data text-4xl font-black leading-none tabular-nums text-ink sm:text-5xl">
-                    {stats?.total_entries ?? 0}
-                  </p>
-                  <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    Entries signed up
-                  </p>
+              <div className="mb-5 rounded-lg border border-edge bg-app px-4 py-4">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="font-data text-3xl font-black leading-none tabular-nums text-ink sm:text-4xl">
+                      {stats?.total_entries ?? 0}
+                    </p>
+                    <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
+                      Total entries
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-data text-3xl font-black leading-none tabular-nums text-alive sm:text-4xl">
+                      {stats?.active_entries ?? 0}
+                    </p>
+                    <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
+                      Still alive
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-data text-3xl font-black leading-none tabular-nums text-dead sm:text-4xl">
+                      {stats?.eliminated_entries ?? 0}
+                    </p>
+                    <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
+                      Eliminated
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-data text-lg font-bold leading-none text-ink sm:text-xl">
-                    {formatDeadline(ENTRY_DEADLINE)}
+                {!deadlinePassed && (
+                  <p className="mt-3 border-t border-edge pt-3 text-center text-xs text-muted">
+                    Entry deadline{" "}
+                    <span className="font-data font-semibold text-ink">
+                      {formatDeadline(ENTRY_DEADLINE)}
+                    </span>
                   </p>
-                  <p className="mt-1.5 font-display text-[10px] uppercase tracking-[0.15em] text-muted">
-                    Entry deadline
-                  </p>
-                </div>
+                )}
               </div>
 
               {!deadlinePassed && (
