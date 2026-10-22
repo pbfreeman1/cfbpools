@@ -134,18 +134,20 @@ Deno.serve(async (req) => {
 
     let needsRegradeIds: string[] = [];
     if (alreadyFinal.length > 0) {
-      const { data: ungraded, error: ungradedErr } = await supabase
-        .from("pickem_picks")
-        .select("game_id")
-        .in(
-          "game_id",
-          alreadyFinal.map((g) => g.id)
-        )
-        .is("result", null);
-      if (ungradedErr) {
-        throw new Error(`Failed to check for ungraded picks: ${ungradedErr.message}`);
+      const finalIds = alreadyFinal.map((g) => g.id);
+      const ungradedSet = new Set<string>();
+      for (let i = 0; i < finalIds.length; i += 50) {
+        const { data: ungraded, error: ungradedErr } = await supabase
+          .from("pickem_picks")
+          .select("game_id")
+          .in("game_id", finalIds.slice(i, i + 50))
+          .is("result", null);
+        if (ungradedErr) {
+          throw new Error(`Failed to check for ungraded picks: ${ungradedErr.message}`);
+        }
+        for (const p of ungraded ?? []) ungradedSet.add(p.game_id as string);
       }
-      needsRegradeIds = [...new Set((ungraded ?? []).map((p) => p.game_id as string))];
+      needsRegradeIds = [...ungradedSet];
     }
 
     if (needsCfbdCheck.length === 0 && needsRegradeIds.length === 0) {
