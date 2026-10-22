@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { checkPickemEntryNameAvailable, createPickemEntry, savePickemPick, sendPickemEntryEmails } from "@/app/actions/pickem";
 import { GameCard, teamSpreadLabel, type GameOption } from "@/app/pickem/components/GameCard";
@@ -45,6 +45,18 @@ export default function NewEntryForm({
     () => games.filter((g) => new Date(g.kickoffTime).getTime() > now),
     [games, now]
   );
+  // Display order: games still open for picking first, soonest kickoff at the
+  // top (so the next game to lock is always the first thing you see), then
+  // games that have already kicked off — dimmed and disabled — at the bottom
+  // under their own divider. Ties break on id so the order is stable.
+  const orderedGames = useMemo(() => {
+    const byKickoff = (a: GameOption, b: GameOption) =>
+      new Date(a.kickoffTime).getTime() - new Date(b.kickoffTime).getTime() ||
+      a.id.localeCompare(b.id);
+    const open = games.filter((g) => new Date(g.kickoffTime).getTime() > now).sort(byKickoff);
+    const started = games.filter((g) => new Date(g.kickoffTime).getTime() <= now).sort(byKickoff);
+    return [...open, ...started];
+  }, [games, now]);
   // Defensive floor for the rare case entries are somehow still open with
   // fewer than 6 unlocked games left (the entry-close trigger is designed to
   // prevent this) — without it, hitting exactly 6 would be unreachable and
@@ -280,15 +292,23 @@ export default function NewEntryForm({
             {pickedCount} of {PICKS_REQUIRED} picked
           </span>
         </div>
-        <p className="mt-1 text-xs text-muted">Choose any 6 of the games below.</p>
+        <p className="mt-1 text-xs text-muted">
+          Choose any 6 of the games below, listed by next kickoff
+          {orderedGames.length > unlockedGames.length
+            ? ` — ${orderedGames.length - unlockedGames.length} already started (at the bottom, not available).`
+            : "."}
+        </p>
       </div>
 
       {games.length === 0 ? (
         <p className="text-sm text-muted">No games have been added to the Pick&apos;em pool yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {games.map((game) => {
+          {orderedGames.map((game, index) => {
             const isLocked = new Date(game.kickoffTime).getTime() <= now;
+            const firstStartedGame =
+              isLocked &&
+              (index === 0 || new Date(orderedGames[index - 1].kickoffTime).getTime() > now);
             const isSkipped = skippedGameIds.has(game.id);
             const isSaved = savedGameIds.has(game.id);
             const isFailed = failedGame?.gameId === game.id;
@@ -299,8 +319,17 @@ export default function NewEntryForm({
             const teamsDisabled = isLocked || isSaved || isSkipped || capBlocksThisGame;
 
             return (
+              <Fragment key={game.id}>
+              {firstStartedGame && (
+                <div className="mt-2 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-edge" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    Already started &mdash; not available
+                  </span>
+                  <span className="h-px flex-1 bg-edge" />
+                </div>
+              )}
               <GameCard
-                key={game.id}
                 game={game}
                 now={now}
                 selectedTeamId={picks[game.id] || undefined}
@@ -323,6 +352,7 @@ export default function NewEntryForm({
                     : undefined
                 }
               />
+              </Fragment>
             );
           })}
         </div>
