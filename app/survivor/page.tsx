@@ -790,14 +790,13 @@ export default async function SurvivorHomePage({
                                         </span>
                                       </>
                                     ) : (
-                                      <>
-                                        <span aria-hidden="true" className="text-lg leading-none">
-                                          &#127942;
-                                        </span>
-                                        <span className="text-[10px] font-semibold uppercase text-muted">
-                                          Auto
-                                        </span>
-                                      </>
+                                      // Navy logo, so it needs a light backing on the dark theme.
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src="/brand/sec-championship.png"
+                                        alt="SEC Championship"
+                                        className="absolute inset-0 h-full w-full rounded-[4px] bg-white object-contain p-1"
+                                      />
                                     )}
                                   </div>
                                 );
