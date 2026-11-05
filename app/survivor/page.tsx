@@ -8,6 +8,7 @@ import { formatMonthDay } from "@/lib/formatDate";
 import CountdownTimer from "@/app/components/CountdownTimer";
 import MatchupStrip from "@/app/components/MatchupStrip";
 import EntryCreatedModal from "@/app/survivor/EntryCreatedModal";
+import WeekGridScroller from "@/app/survivor/WeekGridScroller";
 import TeamAvailabilityChart, {
   type TeamAvailabilityRow,
 } from "@/app/survivor/TeamAvailabilityChart";
@@ -469,7 +470,30 @@ export default async function SurvivorHomePage({
             // lost track of which week you were looking at. Sharing the
             // scroller makes the header travel with the cells by construction.
             (() => {
-              const weekList = weeks ?? [];
+              // Weeks 1-13 are the only weeks players pick in. Anything after
+              // that is the SEC Championship, whose pick is auto-assigned the
+              // week of the game — so it's rendered as one read-only box below
+              // rather than as selectable week columns.
+              const LAST_PICK_WEEK = 13;
+              const CHAMP_COL_PX = 72;
+              const allWeeks = weeks ?? [];
+              const weekList = allWeeks.filter((w) => w.week_number <= LAST_PICK_WEEK);
+              const champWeeks = allWeeks.filter((w) => w.week_number > LAST_PICK_WEEK);
+              const gridCols = `repeat(${weekList.length}, 56px) ${CHAMP_COL_PX}px`;
+              // Week to park at the left edge on load: the previous week, so the
+              // current week is the 2nd visible column. Eliminated entries
+              // anchor to the week before they were knocked out instead.
+              const currentWeekNum = currentWeek?.week_number ?? 1;
+              const anchorFor = (en: (typeof entries)[number]) =>
+                Math.max(
+                  1,
+                  Math.min(
+                    currentWeekNum - 1,
+                    en.status === "eliminated" && en.eliminated_week_number != null
+                      ? en.eliminated_week_number - 1
+                      : LAST_PICK_WEEK
+                  )
+                );
               const anyEditable = entries.some(
                 (en) =>
                   en.status === "active" &&
@@ -485,7 +509,7 @@ export default async function SurvivorHomePage({
                     <div className="mb-3 rounded-md border border-gold-500/60 bg-gold-500/10 px-3 py-2 text-xs text-ink">
                       <span className="font-semibold text-gold-400">To change a pick:</span> tap any
                       week with a gold outline and a &#9998; badge. You can edit it until that
-                      team&apos;s game kicks off &mdash; after that the week is locked and greyed out.
+                      team&apos;s game kicks off &mdash; after that the week is locked.
                     </div>
                   )}
 
@@ -534,15 +558,15 @@ export default async function SurvivorHomePage({
                           </div>
                         </div>
 
-                        <div className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
+                        <WeekGridScroller className="no-scrollbar -mr-6 flex-1 overflow-x-auto pr-6">
                           <div className="flex w-max flex-col gap-1">
-                            <div
-                              className="grid gap-1"
-                              style={{ gridTemplateColumns: `repeat(${weekList.length}, 56px)` }}
-                            >
+                            <div className="grid gap-1" style={{ gridTemplateColumns: gridCols }}>
                               {weekList.map((w) => (
                                 <div
                                   key={w.id}
+                                  {...(w.week_number === anchorFor(entry)
+                                    ? { "data-scroll-anchor": "" }
+                                    : {})}
                                   className={`flex h-5 items-center justify-center font-data text-xs ${
                                     w.id === currentWeek?.id
                                       ? "rounded-sm bg-gold-500/15 font-semibold text-gold-400"
@@ -552,12 +576,12 @@ export default async function SurvivorHomePage({
                                   Wk{w.week_number}
                                 </div>
                               ))}
+                              <div className="flex h-5 items-center justify-center font-data text-xs font-medium text-muted">
+                                SEC Champ
+                              </div>
                             </div>
 
-                            <div
-                              className="grid gap-1"
-                              style={{ gridTemplateColumns: `repeat(${weekList.length}, 56px)` }}
-                            >
+                            <div className="grid gap-1" style={{ gridTemplateColumns: gridCols }}>
                               {weekList.map((w) => {
                                 const cell = grid.get(entry.id)?.get(w.id) ?? {
                                   locked: false,
@@ -598,7 +622,7 @@ export default async function SurvivorHomePage({
                                         <img
                                           src={cell.pick.logoUrl}
                                           alt=""
-                                          className="absolute left-2 top-2 h-5 w-5 object-contain drop-shadow"
+                                          className="absolute left-1.5 top-1.5 h-5 w-5 rounded-full bg-white/90 object-contain p-0.5"
                                         />
                                       )}
                                       {cell.pick.bonusLogoUrl && (
@@ -606,7 +630,7 @@ export default async function SurvivorHomePage({
                                         <img
                                           src={cell.pick.bonusLogoUrl}
                                           alt=""
-                                          className="absolute bottom-2 right-2 h-5 w-5 object-contain drop-shadow"
+                                          className="absolute bottom-1.5 right-1.5 h-5 w-5 rounded-full bg-white/90 object-contain p-0.5"
                                         />
                                       )}
                                     </>
@@ -617,7 +641,7 @@ export default async function SurvivorHomePage({
                                         <img
                                           src={cell.pick.logoUrl}
                                           alt=""
-                                          className="h-5 w-5 object-contain"
+                                          className="h-6 w-6 rounded-full bg-white/90 object-contain p-0.5"
                                         />
                                       )}
                                       {cell.pick.color && (
@@ -689,7 +713,7 @@ export default async function SurvivorHomePage({
                                     <span
                                       style={bonusStyle}
                                       className={`absolute inset-0 flex flex-col items-center justify-center gap-0.5 ${
-                                        editable ? "" : "opacity-60 grayscale"
+                                        ""
                                       }`}
                                     >
                                       {inner}
@@ -724,9 +748,63 @@ export default async function SurvivorHomePage({
                                   </div>
                                 );
                               })}
+
+                              {/* SEC Championship: never clickable — the pick is
+                                  auto-assigned the week of the game. Shows the
+                                  assigned team once one exists. */}
+                              {(() => {
+                                const champPick =
+                                  champWeeks
+                                    .map((w) => grid.get(entry.id)?.get(w.id)?.pick)
+                                    .find((p) => !!p) ?? null;
+                                const champBase =
+                                  "relative flex h-14 flex-col items-center justify-center gap-0.5 rounded-md border-2 text-center";
+                                if (entry.status === "eliminated" && !champPick) {
+                                  return (
+                                    <div
+                                      className={`${champBase} border-transparent`}
+                                      style={{ width: CHAMP_COL_PX }}
+                                    >
+                                      <span className="text-sm text-edge">&ndash;</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div
+                                    className={`${champBase} border-edge bg-app`}
+                                    style={{ width: CHAMP_COL_PX }}
+                                    title="SEC Championship — your pick is auto-assigned the week of the game. Nothing to do here."
+                                  >
+                                    {champPick ? (
+                                      <>
+                                        {champPick.logoUrl && (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img
+                                            src={champPick.logoUrl}
+                                            alt=""
+                                            className="h-6 w-6 rounded-full bg-white/90 object-contain p-0.5"
+                                          />
+                                        )}
+                                        <span className="max-w-[64px] truncate text-[10px] font-semibold text-ink">
+                                          {champPick.shortName}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span aria-hidden="true" className="text-lg leading-none">
+                                          &#127942;
+                                        </span>
+                                        <span className="text-[10px] font-semibold uppercase text-muted">
+                                          Auto
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
-                        </div>
+                        </WeekGridScroller>
                       </div>
 
                       <Link
